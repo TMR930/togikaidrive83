@@ -15,7 +15,8 @@ detections = []  # 認識結果格納用
 def main() -> None:
     end = False
     while not end:
-        oakd_yolo = OakdYolo(args.config, args.model, args.fps)
+        oakd_yolo = OakdYolo(args.config, args.model,
+                             args.fps, save_fps=args.save_fps)
         global labels
         global detections
         labels = oakd_yolo.get_labels()
