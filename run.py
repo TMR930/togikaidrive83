@@ -60,9 +60,16 @@ parser.add_argument(
     default=10,
     type=int,
 )
+parser.add_argument(
+    "-s",
+    "--save_fps",
+    help="Image save fps. If it's > 0, images and video will be saved.",
+    default=0,
+    type=int,
+)
 args = parser.parse_args()
 
-oakd_yolo = OakdYolo(args.config, args.model, args.fps)
+oakd_yolo = OakdYolo(args.config, args.model, args.fps, save_fps=args.save_fps)
 
 
 # First Person Viewでの走行画像表示
