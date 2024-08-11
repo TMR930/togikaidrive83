@@ -252,7 +252,7 @@ class OakdYolo(object):
         """
         now = datetime.datetime.now()
         date = now.strftime("%Y%m%d%H%M")
-        self.path = os.getcwd() + "/image/" + date
+        self.path = os.getcwd() + "/images/" + date
         print(self.path)
         os.makedirs(self.path, exist_ok=True)
 
