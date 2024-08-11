@@ -3,6 +3,7 @@
 import contextlib
 import datetime
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any, List, Tuple, Union
@@ -244,6 +245,16 @@ class OakdYolo(object):
             )
             # Show the frame
             cv2.imshow(name, frame)
+
+    def setup_save(self) -> None:
+        """
+        @brief 保存方法のセットアップ
+        """
+        now = datetime.datetime.now()
+        date = now.strftime("%Y%m%d%H%M")
+        self.path = os.path.dirname(os.getcwd()) + "/data/" + date
+        print(self.path)
+        os.makedirs(self.path, exist_ok=True)
 
     def save_image(self, frame: np.ndarray) -> None:
         """
