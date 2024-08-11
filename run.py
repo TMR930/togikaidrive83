@@ -21,17 +21,49 @@ import numpy as np
 import sys
 import multiprocessing
 from multiprocessing import Process
+import argparse
 
 print("ライブラリの初期化に数秒かかります...")
 # togikaidriveのモジュール
 import ultrasonic
 import motor
 import planner
+
+from lib.oakd_yolo import OakdYolo
+
 # 以下はconfig.pyでの設定によりimport
 if config.HAVE_CONTROLLER: import joystick
 if config.HAVE_CAMERA: import camera_multiprocess
 if config.HAVE_IMU: import gyro
 if config.HAVE_NN: import train_pytorch
+
+# 引数設定
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "-m",
+    "--model",
+    help="Provide model name or model path for inference",
+    default="yolov7tiny_coco_416x416",
+    type=str,
+)
+parser.add_argument(
+    "-c",
+    "--config",
+    help="Provide config path for inference",
+    default="json/yolov7tiny_coco_416x416.json",
+    type=str,
+)
+parser.add_argument(
+    "-f",
+    "--fps",
+    help="Camera frame fps. This should be smaller than nn inference fps",
+    default=10,
+    type=int,
+)
+args = parser.parse_args()
+
+oakd_yolo = OakdYolo(args.config, args.model, args.fps)
+
 
 # First Person Viewでの走行画像表示
 if config.fpv:
@@ -113,6 +145,20 @@ start_time = time.time()
 # ここから走行ループ
 try:
     while True:
+        # 画像認識
+        frame = None
+        try:
+            frame, detections = oakd_yolo.get_frame()
+        except BaseException:
+            print("===================")
+            print("get_frame() error! Reboot OAK-D.")
+            print("If reboot occur frequently, Bandwidth may be too much.")
+            print("Please lower FPS.")
+            print("==================")
+            break
+        if frame is not None:
+            oakd_yolo.display_frame("nn", frame, detections)
+
         # 認知（計測） ＃
         ## RrRHセンサ距離計測例：dis_RrRH = ultrasonic_RrRH.()
         ## 下記では一気に取得
@@ -254,6 +300,7 @@ try:
 finally:
     # 終了処理
     print('\n停止')
+    oakd_yolo.close()
     motor.set_throttle_pwm_duty(config.STOP)
     motor.set_steer_pwm_duty(config.NUTRAL)
     GPIO.cleanup()
