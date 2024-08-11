@@ -1,6 +1,7 @@
 ##!/usr/bin/env python3
 
 import contextlib
+import datetime
 import json
 import time
 from pathlib import Path
@@ -18,9 +19,10 @@ DETECTION_TARGET = ["face", "phone", "right-hand", "left-hand"]
 
 
 class OakdYolo(object):
-    def __init__(self, config_path: str, model_path: str, fps: int = 10) -> None:
+    def __init__(self, config_path: str, model_path: str, fps: int = 10, save_fps: int = 0) -> None:
         if not Path(config_path).exists():
-            raise ValueError("Path {} does not poetry exist!".format(config_path))
+            raise ValueError(
+                "Path {} does not poetry exist!".format(config_path))
         with Path(config_path).open() as f:
             config = json.load(f)
         nnConfig = config.get("nn_config", {})
@@ -42,6 +44,9 @@ class OakdYolo(object):
 
         print(metadata)
         self.cam_fps = fps
+        self.save_fps = save_fps
+        if self.save_fps > self.cam_fps:
+            print("[WARNING] save_fps should be smaller than camera FPS!")
         # parse labels
         nnMappings = config.get("mappings", {})
         self.labels = nnMappings.get("labels", {})
@@ -67,9 +72,11 @@ class OakdYolo(object):
         )
         # Output queues will be used to get the rgb frames and nn data from the outputs defined above
         self.qControl = self._device.getInputQueue("control")
-        self.qRgb = self._device.getOutputQueue(name="rgb", maxSize=4, blocking=False)
+        self.qRgb = self._device.getOutputQueue(
+            name="rgb", maxSize=4, blocking=False)
         self.qIsp = self._device.getOutputQueue(name="isp")
-        self.qDet = self._device.getOutputQueue(name="nn", maxSize=4, blocking=False)
+        self.qDet = self._device.getOutputQueue(
+            name="nn", maxSize=4, blocking=False)
         self.counter = 0
         self.startTime = time.monotonic()
         self.frame_name = 0
@@ -77,6 +84,13 @@ class OakdYolo(object):
         self.path = ""
         self.num = 0
         self.counter = 0
+        if self.save_fps > 0:
+            self.qRaw = self._device.getOutputQueue(
+                name="raw", maxSize=4, blocking=False
+            )
+            self.setup_save()
+        self.start_image_save_time = time.time()
+        self.last_image_save_time = time.time()
 
     def close(self) -> None:
         self._device.close()
@@ -107,7 +121,8 @@ class OakdYolo(object):
         # Properties
         controlIn.out.link(camRgb.inputControl)
         camRgb.setPreviewKeepAspectRatio(False)
-        camRgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
+        camRgb.setResolution(
+            dai.ColorCameraProperties.SensorResolution.THE_1080_P)
         camRgb.setInterleaved(False)
         camRgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
         camRgb.setPreviewSize(1920, 1080)
@@ -121,6 +136,10 @@ class OakdYolo(object):
         manip.setMaxOutputFrameSize(self.width * self.height * 3)  # 640x640x3
         manip.initialConfig.setResizeThumbnail(self.width, self.height)
         camRgb.preview.link(manip.inputImage)
+        if self.save_fps > 0:
+            xoutRaw = pipeline.create(dai.node.XLinkOut)
+            xoutRaw.setStreamName("raw")
+            camRgb.video.link(xoutRaw.input)
 
         # Network specific settings
         detectionNetwork.setConfidenceThreshold(self.confidenceThreshold)
@@ -160,7 +179,7 @@ class OakdYolo(object):
             height = frame.shape[1] * 9 / 16
             brank_height = width - height
             frame = frame[
-                int(brank_height / 2) : int(frame.shape[0] - brank_height / 2), 0:width
+                int(brank_height / 2): int(frame.shape[0] - brank_height / 2), 0:width
             ]
             for detection in detections:
                 # Fix ymin and ymax to cropped frame pos
@@ -170,6 +189,8 @@ class OakdYolo(object):
                 detection.ymax = (width / height) * detection.ymax - (
                     brank_height / 2 / height
                 )
+        if self.save_fps > 0:
+            self.save_image(frame)
         return frame, detections
 
     def display_frame(
@@ -188,7 +209,8 @@ class OakdYolo(object):
                 if self.labels[detection.label] or DETECTION_TARGET:
                     bbox = self.frame_norm(
                         frame,
-                        (detection.xmin, detection.ymin, detection.xmax, detection.ymax),
+                        (detection.xmin, detection.ymin,
+                         detection.xmax, detection.ymax),
                     )
                     cv2.putText(
                         frame,
@@ -207,7 +229,8 @@ class OakdYolo(object):
                         (0, 255, 255),
                     )
                     cv2.rectangle(
-                        frame, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (0, 255, 255), 2
+                        frame, (bbox[0], bbox[1]), (bbox[2],
+                                                    bbox[3]), (0, 255, 255), 2
                     )
             cv2.putText(
                 frame,
@@ -221,3 +244,21 @@ class OakdYolo(object):
             )
             # Show the frame
             cv2.imshow(name, frame)
+
+    def save_image(self, frame: np.ndarray) -> None:
+        """
+        @brief 画像の保存
+        """
+        now = datetime.datetime.now()
+        date = now.strftime("%Y%m%d%H%M")
+        frameRaw = self.qRaw.get()
+        if (time.time() - self.last_image_save_time) >= (
+            1 / self.save_fps
+        ) and self.qRaw is not None:
+            frame = frameRaw.getCvFrame()
+            file_path = "{}/{}_{}.jpg".format(self.path,
+                                              date, str(self.num).zfill(3))
+            cv2.imwrite(file_path, frame)
+            print("save to: " + file_path)
+            self.num += 1
+            self.last_image_save_time = time.time()

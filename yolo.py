@@ -11,7 +11,8 @@ from lib.oakd_yolo import OakdYolo
 detection_label = None  # 認識結果格納用
 detections = []  # 認識結果格納用
 
-def detect() -> None:
+
+def main() -> None:
     end = False
     while not end:
         oakd_yolo = OakdYolo(args.config, args.model, args.fps)
@@ -38,8 +39,6 @@ def detect() -> None:
                 break
         oakd_yolo.close()
 
-def main() -> None:
-    detect()
 
 if __name__ == "__main__":
     # 引数設定(認識モデルのパス設定など)
@@ -63,6 +62,13 @@ if __name__ == "__main__":
         "--fps",
         help="Camera frame fps. This should be smaller than nn inference fps",
         default=10,
+        type=int,
+    )
+    parser.add_argument(
+        "-s",
+        "--save_fps",
+        help="Image save fps. If it's > 0, images and video will be saved.",
+        default=0,
         type=int,
     )
     args = parser.parse_args()
