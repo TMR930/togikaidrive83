@@ -113,6 +113,8 @@ start_time = time.time()
 def planning():
     # 判断（プランニング）
     # 使う超音波センサをconfig.pyのultrasonics_listで設定必要
+    steer_pwm_duty = 0
+    throttle_pwm_duty = 0
     ## ただ真っすぐに走る 
     if config.mode_plan == "GoStraight":
         steer_pwm_duty,throttle_pwm_duty = 0, config.FORWARD_S
@@ -147,7 +149,9 @@ def planning():
 
 def joystick_controll():
     # 操作（ステアリング、アクセル）
-    ## ジョイスティックで操作する場合は上書き
+    # ジョイスティックで操作する場合は上書き
+    steer_pwm_duty = 0
+    throttle_pwm_duty = 0
     joystick.poll()
     mode = joystick.mode[0]
     if mode == "user":
@@ -163,7 +167,6 @@ def joystick_controll():
             throttle_pwm_duty  = int(config.FORWARD_S)
         elif joystick.accel1:
             throttle_pwm_duty  = int(config.FORWARD_C)
-    
     if joystick.recording: 
         recording = True
     else: 
