@@ -110,77 +110,10 @@ motor.set_throttle_pwm_duty(config.STOP)
 # 開始時間
 start_time = time.time()
 
-def planning():
-    # 判断（プランニング）
-    # 使う超音波センサをconfig.pyのultrasonics_listで設定必要
-    steer_pwm_duty = 0
-    throttle_pwm_duty = 0
-    ## ただ真っすぐに走る 
-    if config.mode_plan == "GoStraight":
-        steer_pwm_duty,throttle_pwm_duty = 0, config.FORWARD_S
-    ## 右左空いているほうに走る 
-    elif config.mode_plan == "Right_Left_3":
-        steer_pwm_duty,throttle_pwm_duty = plan.Right_Left_3(ultrasonics["FrLH"].dis, ultrasonics["Fr"].dis, ultrasonics["FrRH"].dis)
-    ## 過去の値を使ってスムーズに走る
-    elif config.mode_plan == "Right_Left_3_Records":
-        steer_pwm_duty, throttle_pwm_duty  = plan.Right_Left_3_Records(ultrasonics["FrLH"].dis, ultrasonics["Fr"].dis, ultrasonics["FrRH"].dis)
-    ## 右手法で走る
-    elif config.mode_plan == "RightHand":
-        steer_pwm_duty, throttle_pwm_duty  = plan.RightHand(ultrasonics["FrRH"].dis, ultrasonics["RrRH"].dis)
-    ## 左手法で走る
-    elif config.mode_plan == "LeftHand":
-        steer_pwm_duty, throttle_pwm_duty  = plan.LeftHand(ultrasonics["FrLH"].dis, ultrasonics["RrLH"].dis)
-    ## 右手法にPID制御を使ってスムーズに走る
-    elif config.mode_plan == "RightHand_PID":
-        steer_pwm_duty, throttle_pwm_duty  = plan.RightHand_PID(ultrasonics["FrRH"], ultrasonics["RrRH"])
-    ## 左手法にPID制御を使ってスムーズに走る
-    elif config.mode_plan == "LeftHand_PID":
-        steer_pwm_duty, throttle_pwm_duty  = plan.LeftHand_PID(ultrasonics["FrLH"], ultrasonics["RrLH"])
-    ## ニューラルネットを使ってスムーズに走る
-    #評価中
-    elif config.mode_plan == "NN":
-        # 超音波センサ入力が変更できるように引数をリストにして渡す形に変更
-        args = [ultrasonics[key].dis for key in config.ultrasonics_list]
-        steer_pwm_duty, throttle_pwm_duty = plan.NN(model, *args)
-        #steer_pwm_duty, throttle_pwm_duty  = plan.NN(model, ultrasonics["FrLH"].dis, ultrasonics["Fr"].dis, ultrasonics["FrRH"].dis)
-    else: 
-        print("デフォルトの判断モードの選択ではありません, コードを書き換えてオリジナルのモードを実装しよう!")
-    return steer_pwm_duty, throttle_pwm_duty
-
-def joystick_controll():
-    # 操作（ステアリング、アクセル）
-    # ジョイスティックで操作する場合は上書き
-    steer_pwm_duty = 0
-    throttle_pwm_duty = 0
-    joystick.poll()
-    mode = joystick.mode[0]
-    if mode == "user":
-        steer_pwm_duty = int(joystick.steer*config.JOYSTICK_STEERING_SCALE*100)
-        throttle_pwm_duty = int(joystick.accel*config.JOYSTICK_THROTTLE_SCALE*100)
-        if joystick.accel2:
-            throttle_pwm_duty  = int(config.FORWARD_S)
-        elif joystick.accel1:
-            throttle_pwm_duty  = int(config.FORWARD_C)
-    elif mode == "auto_str":
-        throttle_pwm_duty = int(joystick.accel*config.JOYSTICK_THROTTLE_SCALE*100)
-        if joystick.accel2:
-            throttle_pwm_duty  = int(config.FORWARD_S)
-        elif joystick.accel1:
-            throttle_pwm_duty  = int(config.FORWARD_C)
-    if joystick.recording: 
-        recording = True
-    else: 
-        recording = False
-    ### コントローラでブレーキ
-    if joystick.breaking:
-        motor.breaking()
-    return steer_pwm_duty, throttle_pwm_duty, recording
-
-
 # ここから走行ループ
 try:
     while True:
-        # 認知（計測）
+        # 認知（計測） ＃
         ## RrRHセンサ距離計測例：dis_RrRH = ultrasonic_RrRH.()
         ## 下記では一気に取得
         message = ""
@@ -191,12 +124,65 @@ try:
             # サンプリングレートを調整する場合は下記をコメントアウト外す
             #time.sleep(sampling_cycle)
 
-        # 判断（プランニング）
-        steer_pwm_duty, throttle_pwm_duty = planning()
+        # 判断（プランニング）＃
+        # 使う超音波センサをconfig.pyのultrasonics_listで設定必要
+        ## ただ真っすぐに走る 
+        if config.mode_plan == "GoStraight":
+            steer_pwm_duty,throttle_pwm_duty = 0, config.FORWARD_S
+        ## 右左空いているほうに走る 
+        elif config.mode_plan == "Right_Left_3":
+            steer_pwm_duty,throttle_pwm_duty = plan.Right_Left_3(ultrasonics["FrLH"].dis, ultrasonics["Fr"].dis, ultrasonics["FrRH"].dis)
+        ## 過去の値を使ってスムーズに走る
+        elif config.mode_plan == "Right_Left_3_Records":
+            steer_pwm_duty, throttle_pwm_duty  = plan.Right_Left_3_Records(ultrasonics["FrLH"].dis, ultrasonics["Fr"].dis, ultrasonics["FrRH"].dis)
+        ## 右手法で走る
+        elif config.mode_plan == "RightHand":
+            steer_pwm_duty, throttle_pwm_duty  = plan.RightHand(ultrasonics["FrRH"].dis, ultrasonics["RrRH"].dis)
+        ## 左手法で走る
+        elif config.mode_plan == "LeftHand":
+            steer_pwm_duty, throttle_pwm_duty  = plan.LeftHand(ultrasonics["FrLH"].dis, ultrasonics["RrLH"].dis)
+        ## 右手法にPID制御を使ってスムーズに走る
+        elif config.mode_plan == "RightHand_PID":
+            steer_pwm_duty, throttle_pwm_duty  = plan.RightHand_PID(ultrasonics["FrRH"], ultrasonics["RrRH"])
+        ## 左手法にPID制御を使ってスムーズに走る
+        elif config.mode_plan == "LeftHand_PID":
+            steer_pwm_duty, throttle_pwm_duty  = plan.LeftHand_PID(ultrasonics["FrLH"], ultrasonics["RrLH"])
+        ## ニューラルネットを使ってスムーズに走る
+        #評価中
+        elif config.mode_plan == "NN":
+            # 超音波センサ入力が変更できるように引数をリストにして渡す形に変更
+            args = [ultrasonics[key].dis for key in config.ultrasonics_list]
+            steer_pwm_duty, throttle_pwm_duty = plan.NN(model, *args)
+            #steer_pwm_duty, throttle_pwm_duty  = plan.NN(model, ultrasonics["FrLH"].dis, ultrasonics["Fr"].dis, ultrasonics["FrRH"].dis)
+        else: 
+            print("デフォルトの判断モードの選択ではありません, コードを書き換えてオリジナルのモードを実装しよう!")
+            break
 
-        # 操作（ステアリング、アクセル）
+        # 操作（ステアリング、アクセル）＃
+        ## ジョイスティックで操作する場合は上書き
         if config.HAVE_CONTROLLER:
-            steer_pwm_duty, throttle_pwm_duty, recording = joystick_controll()
+            joystick.poll()
+            mode = joystick.mode[0]
+            if mode == "user":
+                steer_pwm_duty = int(joystick.steer*config.JOYSTICK_STEERING_SCALE*100)
+                throttle_pwm_duty = int(joystick.accel*config.JOYSTICK_THROTTLE_SCALE*100)
+                if joystick.accel2:
+                    throttle_pwm_duty  = int(config.FORWARD_S)
+                elif joystick.accel1:
+                    throttle_pwm_duty  = int(config.FORWARD_C)
+            elif mode == "auto_str":
+                throttle_pwm_duty = int(joystick.accel*config.JOYSTICK_THROTTLE_SCALE*100)
+                if joystick.accel2:
+                    throttle_pwm_duty  = int(config.FORWARD_S)
+                elif joystick.accel1:
+                    throttle_pwm_duty  = int(config.FORWARD_C)
+            if joystick.recording: 
+                recording = True
+            else: 
+                recording = False
+            ### コントローラでブレーキ
+            if joystick.breaking:
+                motor.breaking()
 
         ## モータードライバーに出力をセット
         ### 補正（動的制御）
