@@ -21,26 +21,72 @@ import numpy as np
 import sys
 import multiprocessing
 from multiprocessing import Process
+import argparse
+import cv2
+import json
 
 print("ライブラリの初期化に数秒かかります...")
 # togikaidriveのモジュール
 import ultrasonic
 import motor
 import planner
+
+from lib.oakd_yolo import OakdYolo
+
 # 以下はconfig.pyでの設定によりimport
 if config.HAVE_CONTROLLER: import joystick
 if config.HAVE_CAMERA: import camera_multiprocess
 if config.HAVE_IMU: import gyro
 if config.HAVE_NN: import train_pytorch
 
+# 引数設定
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "-m",
+    "--model",
+    help="Provide model name or model path for inference",
+    default="yolov7tiny_coco_416x416",
+    type=str,
+)
+parser.add_argument(
+    "-c",
+    "--config",
+    help="Provide config path for inference",
+    default="json/yolov7tiny_coco_416x416.json",
+    type=str,
+)
+parser.add_argument(
+    "-f",
+    "--fps",
+    help="Camera frame fps. This should be smaller than nn inference fps",
+    default=10,
+    type=int,
+)
+parser.add_argument(
+    "-s",
+    "--save_fps",
+    help="Image save fps. If it's > 0, images and video will be saved.",
+    default=0,
+    type=int,
+)
+args = parser.parse_args()
+
+oakd_yolo = OakdYolo(args.config, args.model, args.fps, save_fps=args.save_fps)
+
+json_open = open(args.config, 'r')
+json_load = json.load(json_open)
+print("************************************************************")
+print(json_load['mappings']['labels'][0])
+print("************************************************************")
+
 # First Person Viewでの走行画像表示
-if config.fpv:
-    #img_sh = multiprocessing.sharedctypes.RawArray('i', config.img_size[0]*config.img_size[1]*config.img_size[2])
-    data_sh = multiprocessing.sharedctypes.RawArray('i', (2,3))
-    import fpv
-    server = Process(target = fpv.run,  args = data_sh, kwargs = {'host': 'localhost', 'port': config.port, 'threaded': True})
-    server.start()
-   #fpv.run(host='localhost', port=config.port, debug=False, threaded=True)
+# if config.fpv:
+#     #img_sh = multiprocessing.sharedctypes.RawArray('i', config.img_size[0]*config.img_size[1]*config.img_size[2])
+#     data_sh = multiprocessing.sharedctypes.RawArray('i', (2,3))
+#     import fpv
+#     server = Process(target = fpv.run,  args = data_sh, kwargs = {'host': 'localhost', 'port': config.port, 'threaded': True})
+#     server.start()
+#    #fpv.run(host='localhost', port=config.port, debug=False, threaded=True)
 
 # データ記録用配列作成
 d = np.zeros(config.N_ultrasonics)
@@ -48,12 +94,12 @@ d_stack = np.zeros(config.N_ultrasonics+3)
 recording = True
 
 # 画像保存
-#running = Value("b", True)
-if config.HAVE_CAMERA and not config.fpv:
-    print("Start taking pictures in ",config.image_dir)
-    cam = camera_multiprocess.VideoCaptureWrapper(0)
-    print("【 ◎*】Capture started! \n")
-    #cam.__buffer
+# #running = Value("b", True)
+# if config.HAVE_CAMERA and not config.fpv:
+#     print("Start taking pictures in ",config.image_dir)
+#     cam = camera_multiprocess.VideoCaptureWrapper(0)
+#     print("【 ◎*】Capture started! \n")
+#     #cam.__buffer
 
 
 # 操舵、駆動モーターの初期化
@@ -113,7 +159,21 @@ start_time = time.time()
 # ここから走行ループ
 try:
     while True:
-        # 認知（計測） ＃
+        # 画像認識
+        frame = None
+        try:
+            frame, detections = oakd_yolo.get_frame()
+        except BaseException:
+            print("===================")
+            print("get_frame() error! Reboot OAK-D.")
+            print("If reboot occur frequently, Bandwidth may be too much.")
+            print("Please lower FPS.")
+            print("==================")
+            break
+        if frame is not None:
+            oakd_yolo.display_frame("nn", frame, detections)
+
+        # 認知（計測）
         ## RrRHセンサ距離計測例：dis_RrRH = ultrasonic_RrRH.()
         ## 下記では一気に取得
         message = ""
@@ -124,7 +184,7 @@ try:
             # サンプリングレートを調整する場合は下記をコメントアウト外す
             #time.sleep(sampling_cycle)
 
-        # 判断（プランニング）＃
+        # 判断（プランニング）
         # 使う超音波センサをconfig.pyのultrasonics_listで設定必要
         ## ただ真っすぐに走る 
         if config.mode_plan == "GoStraight":
@@ -158,7 +218,7 @@ try:
             print("デフォルトの判断モードの選択ではありません, コードを書き換えてオリジナルのモードを実装しよう!")
             break
 
-        # 操作（ステアリング、アクセル）＃
+        # 操作（ステアリング、アクセル）
         ## ジョイスティックで操作する場合は上書き
         if config.HAVE_CONTROLLER:
             joystick.poll()
@@ -206,9 +266,9 @@ try:
         if recording:
             d_stack = np.vstack((d_stack, np.insert(d, 0, [ts, steer_pwm_duty, throttle_pwm_duty]),))
             ### 画像保存 ret:カメラ認識、img：画像
-            if config.HAVE_CAMERA and not config.fpv:
-                ret, img = cam.read()
-                cam.save(img, ts, steer_pwm_duty, throttle_pwm_duty, config.image_dir)
+            # if config.HAVE_CAMERA and not config.fpv:
+            #     ret, img = cam.read()
+            #     cam.save(img, ts, steer_pwm_duty, throttle_pwm_duty, config.image_dir)
 
         ## 全体の状態を出力      
         #print("Rec:"+recording, "Mode:",mode,"RunTime:",ts_run ,"Str:",steer_pwm_duty,"Thr:",throttle_pwm_duty,"Uls:", message) #,end=' , '
@@ -252,6 +312,7 @@ try:
 finally:
     # 終了処理
     print('\n停止')
+    oakd_yolo.close()
     motor.set_throttle_pwm_duty(config.STOP)
     motor.set_steer_pwm_duty(config.NUTRAL)
     GPIO.cleanup()
