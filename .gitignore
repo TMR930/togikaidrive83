@@ -5,3 +5,8 @@ models/*
 .DS_STORE
 __pycache__/*
 test* 
+
+# Virtual environment
+virtualenv/
+venv/
+.venv/
