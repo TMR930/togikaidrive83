@@ -52,14 +52,6 @@ def main(args) -> None:
     d_stack = np.zeros(config.N_ultrasonics+3)
     recording = True
 
-    # 画像保存
-    # #running = Value("b", True)
-    # if config.HAVE_CAMERA and not config.fpv:
-    #     print("Start taking pictures in ",config.image_dir)
-    #     cam = camera_multiprocess.VideoCaptureWrapper(0)
-    #     print("【 ◎*】Capture started! \n")
-    #     #cam.__buffer
-
     # 操舵、駆動モーターの初期化
     motor = Motor()
     motor.set_throttle_pwm_duty(config.STOP)
@@ -102,6 +94,7 @@ def main(args) -> None:
 
     # 画像認識の初期化
     oakd_yolo = OakdYolo(args.config, args.model, args.fps, save_fps=args.save_fps)
+    labels = oakd_yolo.get_labels()
 
     # 一時停止（Enterを押すとプログラム実行開始）
     print('*************** Enterを押して走行開始! ***************')
@@ -131,6 +124,12 @@ def main(args) -> None:
                 print("Please lower FPS.")
                 print("===================")
                 break
+            if (len(detections)) >= 1:
+                # print(detections)
+                for detection in detections:
+                    detection_label = labels[detection.label]
+                    print(detection_label + "を検出しました。")
+
             if frame is not None:
                 oakd_yolo.display_frame("nn", frame, detections)
 
