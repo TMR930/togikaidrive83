@@ -57,7 +57,7 @@ if __name__ == "__main__":
         "--config",
         help="Provide config path for inference",
         # default="json/yolov7tiny_coco_416x416.json",
-        default="json/minicar_20240815.json.json",
+        default="json/minicar_20240815.json",
         type=str,
     )
     parser.add_argument(
