@@ -94,7 +94,10 @@ class OakdYolo(object):
         self.last_image_save_time = time.time()
 
     def close(self) -> None:
-        self._device.close()
+        # self._device.close()
+        # self.end = True
+        if self.save_fps > 0:
+            self.make_video()
 
     def set_camera_brightness(self, brightness: int) -> None:
         ctrl = dai.CameraControl()
@@ -273,3 +276,31 @@ class OakdYolo(object):
             print("save to: " + file_path)
             self.num += 1
             self.last_image_save_time = time.time()
+
+    def make_video(self) -> None:
+        """
+        @brief 動画の作成
+        """
+        image_files = sorted([f for f in os.listdir(self.path) if f.endswith(".jpg")])
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        fps = len(image_files) / (
+            self.last_image_save_time - self.start_image_save_time
+        )
+        print(
+            "file num: "
+            + str(len(image_files))
+            + " time: "
+            + str(self.last_image_save_time - self.start_image_save_time)
+        )
+        image_path = os.path.join(self.path, image_files[0])
+        frame = cv2.imread(image_path)
+        self.video_writer = cv2.VideoWriter(
+            self.path + "/color.mp4", fourcc, fps, (frame.shape[1], frame.shape[0])
+        )
+        for image_file in image_files:
+            image_path = os.path.join(self.path, image_file)
+            frame = cv2.imread(image_path)
+            if frame is not None:
+                self.video_writer.write(frame)
+        self.video_writer.release()
+        print("save video to " + self.path + "/color.mp4")
