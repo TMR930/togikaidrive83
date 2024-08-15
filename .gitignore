@@ -1,7 +1,7 @@
 old/*
 records/*
 images/*
-models/*
+# models/*
 .DS_STORE
 __pycache__/*
 test* 
