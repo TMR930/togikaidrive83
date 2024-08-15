@@ -48,14 +48,16 @@ if __name__ == "__main__":
         "-m",
         "--model",
         help="Provide model name or model path for inference",
-        default="yolov7tiny_coco_416x416",
+        # default="yolov7tiny_coco_416x416",
+        default="models/minicar_20240815.blob",
         type=str,
     )
     parser.add_argument(
         "-c",
         "--config",
         help="Provide config path for inference",
-        default="json/yolov7tiny_coco_416x416.json",
+        # default="json/yolov7tiny_coco_416x416.json",
+        default="json/minicar_20240815.json",
         type=str,
     )
     parser.add_argument(
