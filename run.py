@@ -4,11 +4,6 @@
 # 一般的な外部ライブラリ
 import os
 import RPi.GPIO as GPIO
-# GPIO.setwarnings(False)
-# ## GPIOピン番号の指示方法
-# GPIO.setmode(GPIO.BOARD)
-# GPIO.setup(config.e_list,GPIO.IN)
-# GPIO.setup(config.t_list,GPIO.OUT,initial=GPIO.LOW)
 
 import time
 import numpy as np
@@ -22,34 +17,26 @@ import json
 print("ライブラリの初期化に数秒かかります...")
 # togikaidriveのモジュール
 import ultrasonic
-# import motor
 from motor import Motor
 import planner
+import config
 
 from lib.oakd_yolo import OakdYolo
 
+GPIO.setwarnings(False)
+## GPIOピン番号の指示方法
+GPIO.setmode(GPIO.BOARD)
+GPIO.setup(config.e_list,GPIO.IN)
+GPIO.setup(config.t_list,GPIO.OUT,initial=GPIO.LOW)
+
+# 以下はconfig.pyでの設定によりimport
+if config.HAVE_CONTROLLER: from joystick import Joystick
+if config.HAVE_CAMERA: import camera_multiprocess
+if config.HAVE_IMU: import gyro
+if config.HAVE_NN: import train_pytorch
+
 
 def main(args) -> None:
-
-    # GPIO.setwarnings(False)
-    # ## GPIOピン番号の指示方法
-    # GPIO.setmode(GPIO.BOARD)
-    # GPIO.setup(config.e_list,GPIO.IN)
-    # GPIO.setup(config.t_list,GPIO.OUT,initial=GPIO.LOW)
-
-    # # 以下はconfig.pyでの設定によりimport
-    # if config.HAVE_CONTROLLER: import joystick
-    # if config.HAVE_CAMERA: import camera_multiprocess
-    # if config.HAVE_IMU: import gyro
-    # if config.HAVE_NN: import train_pytorch
-
-    oakd_yolo = OakdYolo(args.config, args.model, args.fps, save_fps=args.save_fps)
-
-    # json_open = open(args.config, 'r')
-    # json_load = json.load(json_open)
-    # print("************************************************************")
-    # print(json_load['mappings']['labels'][0])
-    # print("************************************************************")
 
     # First Person Viewでの走行画像表示
     # if config.fpv:
@@ -108,14 +95,16 @@ def main(args) -> None:
 
     # コントローラーの初期化
     if config.HAVE_CONTROLLER:
-        # joystick = joystick.Joystick()
         joystick = Joystick()
         if joystick.HAVE_CONTROLLER == False: config.HAVE_CONTROLLER = False
         mode = joystick.mode[0]
         print("Starting mode: ",mode)
 
+    # 画像認識の初期化
+    oakd_yolo = OakdYolo(args.config, args.model, args.fps, save_fps=args.save_fps)
+
     # 一時停止（Enterを押すとプログラム実行開始）
-    print('Enterを押して走行開始!')
+    print('*************** Enterを押して走行開始! ***************')
     input()
 
     # 途中でモータースイッチを切り替えたとき用に再度モーター初期化
@@ -140,7 +129,7 @@ def main(args) -> None:
                 print("get_frame() error! Reboot OAK-D.")
                 print("If reboot occur frequently, Bandwidth may be too much.")
                 print("Please lower FPS.")
-                print("==================")
+                print("===================")
                 break
             if frame is not None:
                 oakd_yolo.display_frame("nn", frame, detections)
@@ -243,12 +232,10 @@ def main(args) -> None:
                 #     cam.save(img, ts, steer_pwm_duty, throttle_pwm_duty, config.image_dir)
 
             ## 全体の状態を出力      
-            #print("Rec:"+recording, "Mode:",mode,"RunTime:",ts_run ,"Str:",steer_pwm_duty,"Thr:",throttle_pwm_duty,"Uls:", message) #,end=' , '
             if mode == 'auto' : mode = config.mode_plan
             if config.plotter:
                 print(message)
             else:
-                # print("Rec:{0}, Mode:{1}, RunTime:{2:>5}, Str:{3:>4}, Thr:{4:>4}, Uls:[ {5}]".format(recording, mode, ts_run, steer_pwm_duty, throttle_pwm_duty, message)) #,end=' , '
                 print("*******************************************************************")
                 print("Rec:{0}, Mode:{1}, RunTime:{2:>5}".format(recording, mode, ts_run))
                 print("Str:{0:>1}, Thr:{1:>1}".format(steer_pwm_duty, throttle_pwm_duty))
@@ -310,22 +297,6 @@ def main(args) -> None:
 
 
 if __name__ == "__main__":
-    #　myparam_run.pyで２重にimportされるのを防ぐ
-    import config
-
-    GPIO.setwarnings(False)
-    ## GPIOピン番号の指示方法
-    GPIO.setmode(GPIO.BOARD)
-    GPIO.setup(config.e_list,GPIO.IN)
-    GPIO.setup(config.t_list,GPIO.OUT,initial=GPIO.LOW)
-
-    # 以下はconfig.pyでの設定によりimport
-    # if config.HAVE_CONTROLLER: import joystick
-    if config.HAVE_CONTROLLER: from joystick import Joystick
-
-    if config.HAVE_CAMERA: import camera_multiprocess
-    if config.HAVE_IMU: import gyro
-    if config.HAVE_NN: import train_pytorch
 
     # 引数設定
     parser = argparse.ArgumentParser()
@@ -359,8 +330,3 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     main(args)
-
-# if not __name__ == "__main__":
-#     #　myparam_run.pyから起動したときにmyparam_run.pyのconfigを使う
-#     import myparam_run
-#     config = myparam_run.config
