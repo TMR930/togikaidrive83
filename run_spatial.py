@@ -65,6 +65,9 @@ if config.HAVE_NN:
     import train_pytorch
 
 
+OFFSET_ARROW_X = 200  # 矢印看板から走行位置までのX座標オフセット(mm)
+
+
 def measure_ultrasonic(d, ultrasonics):
     # 認知（超音波センサ計測）
     # RrRHセンサ距離計測例：dis_RrRH = ultrasonic_RrRH.()
@@ -167,10 +170,21 @@ def object_detection(oakd_spatial_yolo, labels, steer_pwm_duty):
         for detection in detections:
             detection_label = labels[detection.label]
             print(detection_label + "を検出しました。")
-            if detection_label == "right-arrow":
-                steer_pwm_duty -= 30
-            elif detection_label == "left-arrow":
-                steer_pwm_duty += 30
+
+            if detection_label == "right_arrow":
+                offset_x = detection.spatialCoordinates.x + OFFSET_ARROW_X
+                angle = np.rad2deg(
+                    np.arctan(offset_x/detection.spatialCoordinates.z))
+                converted_angle = (angle/90)*100  # 角度を-100から100の範囲に変換
+                steer_pwm_duty = converted_angle
+
+            elif detection_label == "left_arrow":
+                offset_x = detection.spatialCoordinates.x - OFFSET_ARROW_X
+                angle = np.rad2deg(
+                    np.arctan(offset_x/detection.spatialCoordinates.z))
+                converted_angle = (angle/90)*100
+                steer_pwm_duty = converted_angle
+
     # if frame is not None:
     #     oakd_spatial_yolo.display_frame("nn", frame, detections)
     return steer_pwm_duty

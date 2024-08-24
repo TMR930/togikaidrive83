@@ -4,6 +4,7 @@ import argparse
 import threading
 import cv2
 from lib.oakd_spatial_yolo import OakdSpatialYolo
+import numpy as np
 
 detections = []
 labels = []
@@ -14,10 +15,19 @@ def test():
         if detections:
             for detection in detections:
                 print("=============================")
-                print(labels[detection.label])
-                print(detection.spatialCoordinates.x)
-                print(detection.spatialCoordinates.y)
-                print(detection.spatialCoordinates.z)
+                # print(labels[detection.label])
+                # print(detection.spatialCoordinates.x)
+                # print(detection.spatialCoordinates.y)
+                # print(detection.spatialCoordinates.z)
+                
+                offset_x = detection.spatialCoordinates.x + 300
+                angle = np.rad2deg(
+                    np.arctan(offset_x/detection.spatialCoordinates.z))
+                converted_angle = (angle/90)*100
+
+                print("angle", angle)
+                print("converted_angle", converted_angle)
+
 
 
 def detect() -> None:
@@ -69,14 +79,17 @@ if __name__ == "__main__":
         "-m",
         "--model",
         help="Provide model name or model path for inference",
-        default="yolov7tiny_coco_416x416",
+        # default="yolov7tiny_coco_416x416",
+        default="models/minicar_20240815.blob",
+
         type=str,
     )
     parser.add_argument(
         "-c",
         "--config",
         help="Provide config path for inference",
-        default="json/yolov7tiny_coco_416x416.json",
+        # default="json/yolov7tiny_coco_416x416.json",
+        default="json/minicar_20240815.json",
         type=str,
     )
     parser.add_argument(
