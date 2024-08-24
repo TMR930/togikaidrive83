@@ -10,14 +10,46 @@ from multiprocessing import Process
 import argparse
 import RPi.GPIO as GPIO
 
-print("ライブラリの初期化に数秒かかります...")
-# togikaidriveのモジュール
 import ultrasonic
 from motor import Motor
 import planner
 import config
 
-from lib.oakd_yolo import OakdYolo
+# from lib.oakd_yolo import OakdYolo
+
+# # 引数設定
+# parser = argparse.ArgumentParser()
+# parser.add_argument(
+#     "-m",
+#     "--model",
+#     help="Provide model name or model path for inference",
+#     # default="yolov7tiny_coco_416x416",
+#     default="models/minicar_20240815.blob",
+#     type=str,
+# )
+# parser.add_argument(
+#     "-c",
+#     "--config",
+#     help="Provide config path for inference",
+#     # default="json/yolov7tiny_coco_416x416.json",
+#     default="json/minicar_20240815.json",
+#     type=str,
+# )
+# parser.add_argument(
+#     "-f",
+#     "--fps",
+#     help="Camera frame fps. This should be smaller than nn inference fps",
+#     default=10,
+#     type=int,
+# )
+# parser.add_argument(
+#     "-s",
+#     "--save_fps",
+#     help="Image save fps. If it's > 0, images and video will be saved.",
+#     default=0,
+#     type=int,
+# )
+# args = parser.parse_args()
 
 GPIO.setwarnings(False)
 ## GPIOピン番号の指示方法
@@ -81,11 +113,8 @@ def planning_ultrasonic(plan, ultrasonics, model):
         # break
     return steer_pwm_duty, throttle_pwm_duty
 
-def planning_detection():
-    pass
-
-def control_joystick(joystick, motor):
-    ## ジョイスティックで操作する場合は上書き
+def control_joystick(joystick, motor,steer_pwm_duty, throttle_pwm_duty):
+    # ジョイスティックで操作する場合は上書き
     joystick.poll()
     mode = joystick.mode[0]
     if mode == "user":
@@ -105,31 +134,31 @@ def control_joystick(joystick, motor):
         recording = True
     else: 
         recording = False
-    ### コントローラでブレーキ
+    # コントローラでブレーキ
     if joystick.breaking:
         motor.breaking()
     return steer_pwm_duty, throttle_pwm_duty, recording
 
-def object_detection(oakd_yolo, labels):
-    frame = None
-    try:
-        frame, detections = oakd_yolo.get_frame()
-    except BaseException:
-        print("===================")
-        print("get_frame() error! Reboot OAK-D.")
-        print("If reboot occur frequently, Bandwidth may be too much.")
-        print("Please lower FPS.")
-        print("===================")
-        # break
-    if (len(detections)) >= 1:
-        for detection in detections:
-            detection_label = labels[detection.label]
-            print(detection_label + "を検出しました。")
+# def object_detection(oakd_yolo, labels):
+#     frame = None
+#     try:
+#         frame, detections = oakd_yolo.get_frame()
+#     except BaseException:
+#         print("===================")
+#         print("get_frame() error! Reboot OAK-D.")
+#         print("If reboot occur frequently, Bandwidth may be too much.")
+#         print("Please lower FPS.")
+#         print("===================")
+#         # break
+#     if (len(detections)) >= 1:
+#         for detection in detections:
+#             detection_label = labels[detection.label]
+#             print(detection_label + "を検出しました。")
 
-    if frame is not None:
-        oakd_yolo.display_frame("nn", frame, detections)
+#     if frame is not None:
+#         oakd_yolo.display_frame("nn", frame, detections)
 
-def main(args) -> None:
+def main() -> None:
     # データ記録用配列作成
     d = np.zeros(config.N_ultrasonics)
     d_stack = np.zeros(config.N_ultrasonics+3)
@@ -177,8 +206,8 @@ def main(args) -> None:
         print("Starting mode: ",mode)
 
     # 画像認識の初期化
-    oakd_yolo = OakdYolo(args.config, args.model, args.fps, save_fps=args.save_fps)
-    labels = oakd_yolo.get_labels()
+    # oakd_yolo = OakdYolo(args.config, args.model, args.fps, save_fps=args.save_fps)
+    # labels = oakd_yolo.get_labels()
 
     # 一時停止（Enterを押すとプログラム実行開始）
     print('*************** Enterを押して走行開始! ***************')
@@ -198,7 +227,7 @@ def main(args) -> None:
     try:
         while True:
             # 画像認識
-            object_detection(oakd_yolo, labels)
+            # object_detection(oakd_yolo, labels)
 
             # 認知（超音波センサ計測）
             message = measure_ultrasonic(d, ultrasonics)
@@ -208,7 +237,7 @@ def main(args) -> None:
 
             # 操作（ステアリング、アクセル）
             if config.HAVE_CONTROLLER:
-                steer_pwm_duty, throttle_pwm_duty, recording = control_joystick(joystick, motor)
+                steer_pwm_duty, throttle_pwm_duty, recording = control_joystick(joystick, motor,steer_pwm_duty, throttle_pwm_duty)
 
             ## モータードライバーに出力をセット
             ### 補正（動的制御）
@@ -279,7 +308,7 @@ def main(args) -> None:
     finally:
         # 終了処理
         print('\n停止')
-        oakd_yolo.close()
+        # oakd_yolo.close()
         motor.set_throttle_pwm_duty(config.STOP)
         motor.set_steer_pwm_duty(config.NUTRAL)
         GPIO.cleanup()
@@ -301,37 +330,4 @@ def main(args) -> None:
 
 
 if __name__ == "__main__":
-    # 引数設定
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-m",
-        "--model",
-        help="Provide model name or model path for inference",
-        # default="yolov7tiny_coco_416x416",
-        default="models/minicar_20240815.blob",
-        type=str,
-    )
-    parser.add_argument(
-        "-c",
-        "--config",
-        help="Provide config path for inference",
-        # default="json/yolov7tiny_coco_416x416.json",
-        default="json/minicar_20240815.json",
-        type=str,
-    )
-    parser.add_argument(
-        "-f",
-        "--fps",
-        help="Camera frame fps. This should be smaller than nn inference fps",
-        default=10,
-        type=int,
-    )
-    parser.add_argument(
-        "-s",
-        "--save_fps",
-        help="Image save fps. If it's > 0, images and video will be saved.",
-        default=0,
-        type=int,
-    )
-    args = parser.parse_args()
-    main(args)
+    main()

@@ -160,9 +160,9 @@ JOYSTICK_DEVICE_FILE = "/dev/input/js0"
 ## ジョイスティックのボタンとスティック割り当て
 # DualSenceの操作設定 #割り当て済み
 JOYSTICK_A = 0 #アクセル１
-JOYSTICK_B = 1 #アクセル２
-JOYSTICK_X = 2 #ブレーキ
-JOYSTICK_Y = 3 #記録停止開始
+JOYSTICK_B = 3 #アクセル２
+JOYSTICK_X = 1 #ブレーキ
+JOYSTICK_Y = 2 #記録停止開始
 JOYSTICK_LB = 4
 JOYSTICK_RB = 5
 JOYSTICK_BACK = 6
@@ -171,7 +171,7 @@ JOYSTICK_Logi = 8
 JOYSTICK_LSTICKB = 10
 JOYSTICK_RSTICKB = 11
 JOYSTICK_AXIS_LEFT = 0 #ステアリング（左右）
-JOYSTICK_AXIS_RIGHT = 5 #スロットル（上下）
+JOYSTICK_AXIS_RIGHT = 4 #スロットル（上下）
 JOYSTICK_HAT_LR = 0
 JOYSTICK_HAT_DU = 1
 
