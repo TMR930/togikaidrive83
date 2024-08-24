@@ -126,7 +126,7 @@ def planning_ultrasonic(plan, ultrasonics, model):
     return steer_pwm_duty, throttle_pwm_duty
 
 
-def control_joystick(joystick, motor):
+def control_joystick(joystick, motor, steer_pwm_duty, throttle_pwm_duty):
     # ジョイスティックで操作する場合は上書き
     joystick.poll()
     mode = joystick.mode[0]
@@ -280,7 +280,7 @@ def main() -> None:
             # 操作（ステアリング、アクセル）
             if config.HAVE_CONTROLLER:
                 steer_pwm_duty, throttle_pwm_duty, recording = control_joystick(
-                    joystick, motor)
+                    joystick, motor, steer_pwm_duty, throttle_pwm_duty)
 
             # モータードライバーに出力をセット
             # 補正（動的制御）
