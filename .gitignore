@@ -5,6 +5,7 @@ images/*
 .DS_STORE
 __pycache__/*
 test* 
+lib/__pycache__/*
 
 # Virtual environment
 virtualenv/
