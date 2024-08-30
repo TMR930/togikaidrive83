@@ -4,8 +4,8 @@ import os
 
 # モーター出力パラメータ （デューティー比：-100~100で設定）
 # スロットル用
-FORWARD_S = 40 #ストレートでの値, joy_accel1
-FORWARD_C = 30 #カーブでのの値, joy_accel2
+FORWARD_S = 80 #ストレートでの値, joy_accel1
+FORWARD_C = 40 #カーブでのの値, joy_accel2
 STOP = 0
 REVERSE = -100 
 # ステアリング用
@@ -35,7 +35,7 @@ model_plan_list = ["GoStraight",
                    "Right_Left_3","Right_Left_3_Records",
                    "RightHand","RightHand_PID","LeftHand","LeftHand_PID",
                    "NN"]
-mode_plan = "Right_Left_3"
+mode_plan = "NN"
 
 # 判断モード関連パラメータ
 ## 過去の操作値記録回数
@@ -56,7 +56,8 @@ plotter = False
 #↑↑↑体験型イベント向けパラメータはここまで↑↑↑～～～～～～～～～～～～～～～～～～～～～～～～～～～～～～
 # 車両調整用パラメータ(motor.pyで調整した後値を入れる)
 ## ステアリングのPWMの値
-STEERING_CENTER_PWM = 410 #410:newcar, #340~360:oldcar
+# STEERING_CENTER_PWM = 410 #410:newcar, #340~360:oldcar
+STEERING_CENTER_PWM = 390
 STEERING_WIDTH_PWM = 100
 STEERING_RIGHT_PWM = STEERING_CENTER_PWM + STEERING_WIDTH_PWM
 STEERING_LEFT_PWM = STEERING_CENTER_PWM - STEERING_WIDTH_PWM
@@ -125,11 +126,11 @@ if mode_plan == "NN": HAVE_NN = True
 
 ## 学習済みモデルのパス
 model_dir = "models"
-model_name = "model_20240715_record_20240714_233107.csv_epoch_1_uls_RrLH_FrLH_Fr_FrRH_RrRH.pth"
+model_name = "model_20240825_record_20240825_110013.csv_epoch_30_uls_RrLH_FrLH_Fr_FrRH_RrRH.pth"
 model_path = os.path.join(model_dir, model_name)
 ## モデルと学習のハイパーパラメータ設定
 hidden_dim = 64 #（隠れ層のノード数）
-num_hidden_layers = 3 #（隠れ層の数）
+num_hidden_layers = 6 #（隠れ層の数）def:30
 batch_size = 8
 epochs = 30
 
