@@ -3,7 +3,8 @@ import numpy as np
 import config
 import time
 if config.HAVE_NN: 
-    import torch.tensor
+    # import torch.tensor
+    import torch
     from train_pytorch import denormalize_motor, normalize_ultrasonics 
 
 class Planner:
