@@ -124,16 +124,16 @@ class OakdSpatialYolo(object):
         self.path = ""
         self.num = 0
         self.text = TextHelper()
-        if self.robot_coordinate:
-            from akari_client import AkariClient
+        # if self.robot_coordinate:
+        #     from akari_client import AkariClient
 
-            self.akari = AkariClient()
-            self.joints = self.akari.joints
-            self.sync = HostSync(5)
-        else:
-            self.sync = HostSync(4)
-        if self.show_bird_frame:
-            self.bird_eye_frame = self.create_bird_frame()
+        #     self.akari = AkariClient()
+        #     self.joints = self.akari.joints
+        #     self.sync = HostSync(5)
+        # else:
+        self.sync = HostSync(4)
+        # if self.show_bird_frame:
+        #     self.bird_eye_frame = self.create_bird_frame()
         self.raw_frame = None
 
     def close(self) -> None:
@@ -489,8 +489,8 @@ class OakdSpatialYolo(object):
             )
             # Show the frame
             cv2.imshow(name, frame)
-            if self.show_bird_frame:
-                self.draw_bird_frame(detections)
+            # if self.show_bird_frame:
+            #     self.draw_bird_frame(detections)
 
     def create_bird_frame(self) -> np.ndarray:
         """
