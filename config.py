@@ -4,8 +4,8 @@ import os
 
 # モーター出力パラメータ （デューティー比：-100~100で設定）
 # スロットル用
-FORWARD_S = 80 #ストレートでの値, joy_accel1
-FORWARD_C = 40 #カーブでのの値, joy_accel2
+FORWARD_S = 120 #ストレートでの値, joy_accel1
+FORWARD_C = 80 #カーブでのの値, joy_accel2
 STOP = 0
 REVERSE = -100 
 # ステアリング用
