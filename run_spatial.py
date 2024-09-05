@@ -134,20 +134,18 @@ def planning_ultrasonic(plan, ultrasonics, model):
         steer_pwm_duty, throttle_pwm_duty = plan.LeftHand_PID(
             ultrasonics["FrLH"], ultrasonics["RrLH"])
     # ニューラルネットを使ってスムーズに走る
-    # 評価中
     elif config.mode_plan == "NN":
         # 超音波センサ入力が変更できるように引数をリストにして渡す形に変更
         args = [ultrasonics[key].dis for key in config.ultrasonics_list]
         steer_pwm_duty, throttle_pwm_duty = plan.NN(model, *args)
-        # steer_pwm_duty, throttle_pwm_duty  = plan.NN(model, ultrasonics["FrLH"].dis, ultrasonics["Fr"].dis, ultrasonics["FrRH"].dis)
     else:
         print("デフォルトの判断モードの選択ではありません, コードを書き換えてオリジナルのモードを実装しよう!")
-        # break
+
     return steer_pwm_duty, throttle_pwm_duty
 
 
 def control_joystick(joystick, motor, steer_pwm_duty, throttle_pwm_duty):
-    # ジョイスティックで操作する場合は上書き
+    """ジョイスティックで操作する場合は操舵値を上書き"""
     joystick.poll()
     mode = joystick.mode[0]
     if mode == "user":
@@ -175,7 +173,8 @@ def control_joystick(joystick, motor, steer_pwm_duty, throttle_pwm_duty):
     return steer_pwm_duty, throttle_pwm_duty, recording
 
 
-def object_detection(steer_pwm_duty):
+def planning_detection(steer_pwm_duty):
+    """認識結果をもとに走行判断"""
     objects = []
     detection_list = []
     detection_id = {"Right-arrow": 0, "Left-arrow": 0,
@@ -190,7 +189,7 @@ def object_detection(steer_pwm_duty):
             object.pos[0] = detection.spatialCoordinates.x
             object.pos[1] = detection.spatialCoordinates.y
             object.pos[2] = detection.spatialCoordinates.z
-            # リミット以上の検出物を除外
+            # リミット以上の検出物を除外しそれ以外をリスト格納する
             if detection.spatialCoordinates.z < DETECTION_DISTANCE_LIMIT:
                 objects.append(object)
                 detection_list.append(object.name)
@@ -260,6 +259,7 @@ def object_detection(steer_pwm_duty):
 
 
 def detect() -> None:
+    """画像認識スレッド"""
     global detections
     global labels
 
@@ -290,6 +290,7 @@ def detect() -> None:
 
 
 def run() -> None:
+    """走行用スレッド"""
     # データ記録用配列作成
     d = np.zeros(config.N_ultrasonics)
     d_stack = np.zeros(config.N_ultrasonics+3)
@@ -364,7 +365,7 @@ def run() -> None:
                 plan, ultrasonics, model)
 
             # 画像認識
-            steer_pwm_duty = object_detection(steer_pwm_duty)
+            steer_pwm_duty = planning_detection(steer_pwm_duty)
 
             # 操作（ステアリング、アクセル）
             if config.HAVE_CONTROLLER:
@@ -380,10 +381,6 @@ def run() -> None:
                 motor.set_steer_pwm_duty(steer_pwm_duty * (1 - 2 * imu.Gstr))
                 motor.set_throttle_pwm_duty(
                     throttle_pwm_duty * (1 - 2 * imu.Gthr))
-            # ヨー角の角速度でスロットル調整
-            # 未実装
-            # elif config.mode_plan == "GVectoring":
-            #    imu.GVectoring()
             else:
                 motor.set_steer_pwm_duty(steer_pwm_duty)
                 motor.set_throttle_pwm_duty(throttle_pwm_duty)
@@ -394,10 +391,6 @@ def run() -> None:
             if recording:
                 d_stack = np.vstack(
                     (d_stack, np.insert(d, 0, [ts, steer_pwm_duty, throttle_pwm_duty]),))
-                # 画像保存 ret:カメラ認識、img：画像
-                # if config.HAVE_CAMERA and not config.fpv:
-                #     ret, img = cam.read()
-                #     cam.save(img, ts, steer_pwm_duty, throttle_pwm_duty, config.image_dir)
 
             # 全体の状態を出力
             if mode == 'auto':
@@ -443,7 +436,6 @@ def run() -> None:
                     plan.flag_stop = False
                     print("一時停止、Enterを押して走行再開!")
                     input()
-                    # break
 
     finally:
         # 終了処理
@@ -467,7 +459,7 @@ def run() -> None:
 
 def main():
     t1 = threading.Thread(target=run)  # 走行用スレッド
-    t2 = threading.Thread(target=detect)  # 認識用スレッド
+    t2 = threading.Thread(target=detect)  # 画像認識用スレッド
     t1.start()
     t2.start()
     t1.join()
