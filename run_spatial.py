@@ -13,40 +13,8 @@ import multiprocessing
 from multiprocessing import Process
 import argparse
 import RPi.GPIO as GPIO
+from typing import Tuple, TypedDict
 
-# 引数設定
-parser = argparse.ArgumentParser()
-parser.add_argument(
-    "-m",
-    "--model",
-    help="Provide model name or model path for inference",
-    # default="yolov7tiny_coco_416x416",
-    default="models/minicar_20240815.blob",
-    type=str,
-)
-parser.add_argument(
-    "-c",
-    "--config",
-    help="Provide config path for inference",
-    # default="json/yolov7tiny_coco_416x416.json",
-    default="json/minicar_20240815.json",
-    type=str,
-)
-parser.add_argument(
-    "-f",
-    "--fps",
-    help="Camera frame fps. This should be smaller than nn inference fps",
-    default=10,
-    type=int,
-)
-parser.add_argument(
-    "-s",
-    "--save_fps",
-    help="Image save fps. If it's > 0, images and video will be saved.",
-    default=0,
-    type=int,
-)
-args = parser.parse_args()
 
 GPIO.setwarnings(False)
 # GPIOピン番号の指示方法
@@ -66,6 +34,18 @@ if config.HAVE_NN:
 
 
 OFFSET_ARROW_X = 200  # 矢印看板から走行位置までのX座標オフセット(mm)
+DETECTION_DISTANCE_LIMIT = 3000  # 一定距離以上の検出物をカット
+
+
+class Object(TypedDict):
+    name: str = ""  # 物体ラベル
+    id: int = None  # 最新のトラッキングID
+    prev_status: bool = False  # 1つ前のstatus
+    status: bool = False  # 現在認識しているかどうか
+    pos: np.array = np.array([0.0, 0.0, 0.0])  # 位置
+    start_time: float = 0  # 認識開始時刻
+    last_time: float = 0  # 最後に認識した時刻
+    prev_focus_status: bool = False  # 1つ前のfocus_status
 
 
 def measure_ultrasonic(d, ultrasonics):
@@ -157,6 +137,10 @@ def control_joystick(joystick, motor, steer_pwm_duty, throttle_pwm_duty):
 
 def object_detection(oakd_spatial_yolo, labels, steer_pwm_duty):
     frame = None
+    objects = []
+    detection_list = []
+    detection_id = {"Right-arrow": 0, "Left-arrow": 0,
+                    "Blue-cone": 0, "Green-cone": 0, "Orange-cone": 0}
     try:
         frame, detections = oakd_spatial_yolo.get_frame()
     except BaseException:
@@ -167,30 +151,70 @@ def object_detection(oakd_spatial_yolo, labels, steer_pwm_duty):
         print("===================")
 
     if (len(detections)) >= 1:
+        cnt_id = 0
         for detection in detections:
-            detection_label = labels[detection.label]
-            print(detection_label + "を検出しました。")
+            object = Object
+            object.name = labels[detection.label]
+            object.pos[0] = detection.spatialCoordinates.x
+            object.pos[1] = detection.spatialCoordinates.y
+            object.pos[2] = detection.spatialCoordinates.z
+            # リミット以上の検出物を除外
+            if detection.spatialCoordinates.z < DETECTION_DISTANCE_LIMIT:
+                objects.append(object)
+                detection_list.append(object.name)
+                detection_id[object.name] = cnt_id
+            cnt_id += 1
+        print("検出物：", detection_list)
 
-            if detection_label == "right_arrow":
-                offset_x = detection.spatialCoordinates.x + OFFSET_ARROW_X
-                angle = np.rad2deg(
-                    np.arctan(offset_x/detection.spatialCoordinates.z))
-                converted_angle = (angle/90)*100  # 角度を-100から100の範囲に変換
-                steer_pwm_duty = converted_angle
+        # 右矢印を検出した場合、操舵を右に切る
+        if "Right-arrow" in detection_list:
+            offset_x = detections[detection_id["Right-arrow"]
+                                  ].spatialCoordinates.x + OFFSET_ARROW_X
+            angle = np.rad2deg(
+                np.arctan(offset_x/detection.spatialCoordinates.z))
+            converted_angle = (angle/90)*100  # 角度を-100から100の範囲に変換
+            steer_pwm_duty = converted_angle
+        # 左矢印を検出した場合、操舵を左に切る
+        elif "Left-arrow" in detection_list:
+            offset_x = detections[detection_id["Left-arrow"]
+                                  ].spatialCoordinates.x - OFFSET_ARROW_X
+            angle = np.rad2deg(
+                np.arctan(offset_x/detection.spatialCoordinates.z))
+            converted_angle = (angle/90)*100
+            steer_pwm_duty = converted_angle
 
-            elif detection_label == "left_arrow":
-                offset_x = detection.spatialCoordinates.x - OFFSET_ARROW_X
-                angle = np.rad2deg(
-                    np.arctan(offset_x/detection.spatialCoordinates.z))
-                converted_angle = (angle/90)*100
-                steer_pwm_duty = converted_angle
+        # 青コーンのみ検出かつXが+側の場合、操舵を右に切る
+        elif "Blue-cone" in detection_list and detections[detection_id["Blue-cone"]].spatialCoordinates.x > -100:
+            steer_pwm_duty == -100
+        # 青コーンと緑コーンを検出した場合、中間に舵を切る
+        elif "Blue-cone" and "Green-cone" in detection_list:
+            blue_x = detections[detection_id["Blue-cone"]
+                                ].spatialCoordinates.x
+            green_x = detections[detection_id["Green-cone"]
+                                 ].spatialCoordinates.x
+            target_x = (blue_x+green_x)/2
+            steer_pwm_duty = target_x*(-1)
+        # 緑コーンのみ検出かつXが-側の場合、操舵を左に切る
+        elif "Green-cone" in detection_list and detection_id["Green-cone"].spatialCoordinates.x < 100:
+            steer_pwm_duty == 100
+        # 緑コーンと橙コーンを検出した場合、中間に舵を切る
+        elif "Green-cone" and "Orange-cone" in detection_list:
+            green_x = detections[detection_id["Green-cone"]
+                                 ].spatialCoordinates.x
+            orange_x = detections[detection_id["Orange-cone"]
+                                  ].spatialCoordinates.x
+            target_x = (green_x+orange_x)/2
+            steer_pwm_duty = target_x*(-1)
+        # 橙コーンのみ検出かつXが+側の場合、操舵を右に切る
+        elif "Orange-cone" in detection_list and detection_id["Orange-cone"].spatialCoordinates.x > -100:
+            steer_pwm_duty == -100
 
     # if frame is not None:
     #     oakd_spatial_yolo.display_frame("nn", frame, detections)
     return steer_pwm_duty
 
 
-def main() -> None:
+def main(args) -> None:
     # データ記録用配列作成
     d = np.zeros(config.N_ultrasonics)
     d_stack = np.zeros(config.N_ultrasonics+3)
@@ -378,4 +402,37 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    # 引数設定
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-m",
+        "--model",
+        help="Provide model name or model path for inference",
+        # default="yolov7tiny_coco_416x416",
+        default="models/aicar_20240825.blob",
+        type=str,
+    )
+    parser.add_argument(
+        "-c",
+        "--config",
+        help="Provide config path for inference",
+        # default="json/yolov7tiny_coco_416x416.json",
+        default="json/aicar_20240825.json",
+        type=str,
+    )
+    parser.add_argument(
+        "-f",
+        "--fps",
+        help="Camera frame fps. This should be smaller than nn inference fps",
+        default=10,
+        type=int,
+    )
+    parser.add_argument(
+        "-s",
+        "--save_fps",
+        help="Image save fps. If it's > 0, images and video will be saved.",
+        default=0,
+        type=int,
+    )
+    args = parser.parse_args()
+    main(args)
