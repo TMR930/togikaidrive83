@@ -1,19 +1,23 @@
 #!/usr/bin/env python3
 # coding: utf-8
 
-from lib.oakd_spatial_yolo import OakdSpatialYolo
-import config
-import planner
-from motor import Motor
-import ultrasonic
-import sys
-import time
-import numpy as np
-import multiprocessing
-from multiprocessing import Process
 import argparse
+import cv2
+import numpy as np
+import sys
+import threading
+import time
 import RPi.GPIO as GPIO
 from typing import Tuple, TypedDict
+# import multiprocessing
+# from multiprocessing import Process
+
+from lib.oakd_spatial_yolo import OakdSpatialYolo
+
+import config
+from motor import Motor
+import planner
+import ultrasonic
 
 
 GPIO.setwarnings(False)
@@ -35,6 +39,42 @@ if config.HAVE_NN:
 
 OFFSET_ARROW_X = 200  # 矢印看板から走行位置までのX座標オフセット(mm)
 DETECTION_DISTANCE_LIMIT = 3000  # 一定距離以上の検出物をカット
+
+detections = []  # 認識結果を格納しスレッド間で共有
+
+# 引数設定
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "-m",
+    "--model",
+    help="Provide model name or model path for inference",
+    # default="yolov7tiny_coco_416x416",
+    default="models/aicar_20240825.blob",
+    type=str,
+)
+parser.add_argument(
+    "-c",
+    "--config",
+    help="Provide config path for inference",
+    # default="json/yolov7tiny_coco_416x416.json",
+    default="json/aicar_20240825.json",
+    type=str,
+)
+parser.add_argument(
+    "-f",
+    "--fps",
+    help="Camera frame fps. This should be smaller than nn inference fps",
+    default=10,
+    type=int,
+)
+parser.add_argument(
+    "-s",
+    "--save_fps",
+    help="Image save fps. If it's > 0, images and video will be saved.",
+    default=0,
+    type=int,
+)
+args = parser.parse_args()
 
 
 class Object(TypedDict):
@@ -135,20 +175,12 @@ def control_joystick(joystick, motor, steer_pwm_duty, throttle_pwm_duty):
     return steer_pwm_duty, throttle_pwm_duty, recording
 
 
-def object_detection(oakd_spatial_yolo, labels, steer_pwm_duty):
-    frame = None
+def object_detection(steer_pwm_duty):
     objects = []
     detection_list = []
     detection_id = {"Right-arrow": 0, "Left-arrow": 0,
                     "Blue-cone": 0, "Green-cone": 0, "Orange-cone": 0}
-    try:
-        frame, detections = oakd_spatial_yolo.get_frame()
-    except BaseException:
-        print("===================")
-        print("get_frame() error! Reboot OAK-D.")
-        print("If reboot occur frequently, Bandwidth may be too much.")
-        print("Please lower FPS.")
-        print("===================")
+    message = ""
 
     if (len(detections)) >= 1:
         cnt_id = 0
@@ -174,6 +206,8 @@ def object_detection(oakd_spatial_yolo, labels, steer_pwm_duty):
                 np.arctan(offset_x/detection.spatialCoordinates.z))
             converted_angle = (angle/90)*100  # 角度を-100から100の範囲に変換
             steer_pwm_duty = converted_angle
+            message = "右矢印を検出し操舵を右に切る"
+
         # 左矢印を検出した場合、操舵を左に切る
         elif "Left-arrow" in detection_list:
             offset_x = detections[detection_id["Left-arrow"]
@@ -182,10 +216,13 @@ def object_detection(oakd_spatial_yolo, labels, steer_pwm_duty):
                 np.arctan(offset_x/detection.spatialCoordinates.z))
             converted_angle = (angle/90)*100
             steer_pwm_duty = converted_angle
+            message = "左矢印を検出し操舵を左に切る"
 
         # 青コーンのみ検出かつXが+側の場合、操舵を右に切る
         elif "Blue-cone" in detection_list and detections[detection_id["Blue-cone"]].spatialCoordinates.x > -100:
             steer_pwm_duty == -100
+            message = "青コーンのみ検出かつXが+側の場合、操舵を右に切る"
+
         # 青コーンと緑コーンを検出した場合、中間に舵を切る
         elif "Blue-cone" and "Green-cone" in detection_list:
             blue_x = detections[detection_id["Blue-cone"]
@@ -194,9 +231,13 @@ def object_detection(oakd_spatial_yolo, labels, steer_pwm_duty):
                                  ].spatialCoordinates.x
             target_x = (blue_x+green_x)/2
             steer_pwm_duty = target_x*(-1)
+            message = "青コーンと緑コーンを検出した場合、中間に舵を切る"
+
         # 緑コーンのみ検出かつXが-側の場合、操舵を左に切る
         elif "Green-cone" in detection_list and detection_id["Green-cone"].spatialCoordinates.x < 100:
             steer_pwm_duty == 100
+            message = "緑コーンのみ検出かつXが-側の場合、操舵を左に切る"
+
         # 緑コーンと橙コーンを検出した場合、中間に舵を切る
         elif "Green-cone" and "Orange-cone" in detection_list:
             green_x = detections[detection_id["Green-cone"]
@@ -205,16 +246,50 @@ def object_detection(oakd_spatial_yolo, labels, steer_pwm_duty):
                                   ].spatialCoordinates.x
             target_x = (green_x+orange_x)/2
             steer_pwm_duty = target_x*(-1)
+            message = "緑コーンと橙コーンを検出した場合、中間に舵を切る"
+
         # 橙コーンのみ検出かつXが+側の場合、操舵を右に切る
         elif "Orange-cone" in detection_list and detection_id["Orange-cone"].spatialCoordinates.x > -100:
             steer_pwm_duty == -100
+            message = "橙コーンのみ検出かつXが+側の場合、操舵を右に切る"
 
-    # if frame is not None:
-    #     oakd_spatial_yolo.display_frame("nn", frame, detections)
+        print("*******************************************************************")
+        print(message)
+
     return steer_pwm_duty
 
 
-def main(args) -> None:
+def detect() -> None:
+    global detections
+    global labels
+
+    # 画像認識の初期化
+    oakd_spatial_yolo = OakdSpatialYolo(
+        config_path=args.config,
+        model_path=args.model,
+        fps=args.fps,
+        save_fps=args.save_fps,
+    )
+    labels = oakd_spatial_yolo.get_labels()
+    while True:
+        frame = None
+        try:
+            frame, detections = oakd_spatial_yolo.get_frame()
+        except BaseException:
+            print("===================")
+            print("get_frame() error! Reboot OAK-D.")
+            print("If reboot occur frequently, Bandwidth may be too much.")
+            print("Please lower FPS.")
+            print("===================")
+        if frame is not None:
+            oakd_spatial_yolo.display_frame("nn", frame, detections)
+        if cv2.waitKey(1) == ord("q"):
+            end = True
+            break
+    oakd_spatial_yolo.close()
+
+
+def run() -> None:
     # データ記録用配列作成
     d = np.zeros(config.N_ultrasonics)
     d_stack = np.zeros(config.N_ultrasonics+3)
@@ -264,15 +339,6 @@ def main(args) -> None:
         mode = joystick.mode[0]
         print("Starting mode: ", mode)
 
-    # 画像認識の初期化
-    oakd_spatial_yolo = OakdSpatialYolo(
-        config_path=args.config,
-        model_path=args.model,
-        fps=args.fps,
-        save_fps=args.save_fps,
-    )
-    labels = oakd_spatial_yolo.get_labels()
-
     # 一時停止（Enterを押すとプログラム実行開始）
     print('*************** Enterを押して走行開始! ***************')
     input()
@@ -298,8 +364,7 @@ def main(args) -> None:
                 plan, ultrasonics, model)
 
             # 画像認識
-            steer_pwm_duty = object_detection(
-                oakd_spatial_yolo, labels, steer_pwm_duty)
+            steer_pwm_duty = object_detection(steer_pwm_duty)
 
             # 操作（ステアリング、アクセル）
             if config.HAVE_CONTROLLER:
@@ -383,7 +448,6 @@ def main(args) -> None:
     finally:
         # 終了処理
         print('\n停止')
-        oakd_spatial_yolo.close()
         motor.set_throttle_pwm_duty(config.STOP)
         motor.set_steer_pwm_duty(config.NUTRAL)
         GPIO.cleanup()
@@ -401,38 +465,14 @@ def main(args) -> None:
         sys.exit()
 
 
+def main():
+    t1 = threading.Thread(target=run)  # 走行用スレッド
+    t2 = threading.Thread(target=detect)  # 認識用スレッド
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+
 if __name__ == "__main__":
-    # 引数設定
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-m",
-        "--model",
-        help="Provide model name or model path for inference",
-        # default="yolov7tiny_coco_416x416",
-        default="models/aicar_20240825.blob",
-        type=str,
-    )
-    parser.add_argument(
-        "-c",
-        "--config",
-        help="Provide config path for inference",
-        # default="json/yolov7tiny_coco_416x416.json",
-        default="json/aicar_20240825.json",
-        type=str,
-    )
-    parser.add_argument(
-        "-f",
-        "--fps",
-        help="Camera frame fps. This should be smaller than nn inference fps",
-        default=10,
-        type=int,
-    )
-    parser.add_argument(
-        "-s",
-        "--save_fps",
-        help="Image save fps. If it's > 0, images and video will be saved.",
-        default=0,
-        type=int,
-    )
-    args = parser.parse_args()
-    main(args)
+    main()
