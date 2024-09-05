@@ -15,6 +15,7 @@ import config
 # データの読み込みと前処理
 def load_data():
     folder = "records"
+    global csv_file
     csv_files = []
     for file in os.listdir(folder):
         if file.endswith(".csv"):
@@ -187,7 +188,7 @@ def train_model(model, dataloader, criterion, optimizer, start_epoch=0, epochs=c
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
     plt.legend()
-    loss_history_path = config.model_dir+'/'+'loss_history.png'
+    loss_history_path = config.model_dir+'/'+'loss_history_'+ csv_file +'.png'
     plt.savefig(loss_history_path)
     plt.close()
     print("Lossの履歴を保存しました: "+loss_history_path)
