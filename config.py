@@ -35,7 +35,7 @@ model_plan_list = ["GoStraight",
                    "Right_Left_3","Right_Left_3_Records",
                    "RightHand","RightHand_PID","LeftHand","LeftHand_PID",
                    "NN"]
-mode_plan = "NN"
+mode_plan = "Right_Left_3_Records"
 
 # 判断モード関連パラメータ
 ## 過去の操作値記録回数
