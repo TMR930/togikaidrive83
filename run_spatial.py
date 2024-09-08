@@ -9,8 +9,6 @@ import threading
 import time
 import RPi.GPIO as GPIO
 from typing import Tuple, TypedDict
-# import multiprocessing
-# from multiprocessing import Process
 
 from lib.oakd_spatial_yolo import OakdSpatialYolo
 
@@ -29,18 +27,16 @@ GPIO.setup(config.t_list, GPIO.OUT, initial=GPIO.LOW)
 # 以下はconfig.pyでの設定によりimport
 if config.HAVE_CONTROLLER:
     from joystick import Joystick
-if config.HAVE_CAMERA:
-    import camera_multiprocess
-if config.HAVE_IMU:
-    import gyro
 if config.HAVE_NN:
     import train_pytorch
 
 
 OFFSET_ARROW_X = 200  # 矢印看板から走行位置までのX座標オフセット(mm)
-DETECTION_DISTANCE_LIMIT = 3000  # 一定距離以上の検出物をカット
+DETECTION_DISTANCE_LIMIT = 3000  # 一定距離以上の検出物をカット(mm)
+PARKING_TIME = 500  # 一定時間経過したら駐車モードにする(sec)
 
 detections = []  # 認識結果を格納しスレッド間で共有
+parking_mode = False
 
 # 引数設定
 parser = argparse.ArgumentParser()
@@ -91,15 +87,11 @@ class Object(TypedDict):
 def measure_ultrasonic(d, ultrasonics):
     # 認知（超音波センサ計測）
     # RrRHセンサ距離計測例：dis_RrRH = ultrasonic_RrRH.()
-    # 下記では一気に取得
     message = ""
     for i, name in enumerate(config.ultrasonics_list):
         d[i] = ultrasonics[name].measure()
-        # message += name + ":" + str(round(ultrasonics[name].dis,2)).rjust(7, ' ') #Thony表示用にprint変更
         message += name + ":" + \
             "{:>4}".format(round(ultrasonics[name].dis)) + ", "
-        # サンプリングレートを調整する場合は下記をコメントアウト外す
-        # time.sleep(sampling_cycle)
     return message
 
 
@@ -173,12 +165,11 @@ def control_joystick(joystick, motor, steer_pwm_duty, throttle_pwm_duty):
     return steer_pwm_duty, throttle_pwm_duty, recording
 
 
-def planning_detection(steer_pwm_duty):
+def planning_detection(steer_pwm_duty, throttle_pwm_duty):
     """認識結果をもとに走行判断"""
+    global parking_mode
     objects = []
-    detection_list = []
-    detection_id = {"Right-arrow": 0, "Left-arrow": 0,
-                    "Blue-cone": 0, "Green-cone": 0, "Orange-cone": 0}
+    detection_dict = {}
     message = ""
 
     if (len(detections)) >= 1:
@@ -192,70 +183,94 @@ def planning_detection(steer_pwm_duty):
             # リミット以上の検出物を除外しそれ以外をリスト格納する
             if detection.spatialCoordinates.z < DETECTION_DISTANCE_LIMIT:
                 objects.append(object)
-                detection_list.append(object.name)
-                detection_id[object.name] = cnt_id
+                detection_dict[object.name] = cnt_id
             cnt_id += 1
-        print("検出物：", detection_list)
 
         # 右矢印を検出した場合、操舵を右に切る
-        if "Right-arrow" in detection_list:
-            offset_x = detections[detection_id["Right-arrow"]
+        if "Right-arrow" in detection_dict:
+            offset_x = detections[detection_dict["Right-arrow"]
                                   ].spatialCoordinates.x + OFFSET_ARROW_X
             angle = np.rad2deg(
-                np.arctan(offset_x/detection.spatialCoordinates.z))
+                np.arctan(offset_x/detections[detection_dict["Right-arrow"]
+                                              ].spatialCoordinates.z))
             converted_angle = (angle/90)*100  # 角度を-100から100の範囲に変換
             steer_pwm_duty = converted_angle
             message = "右矢印を検出し操舵を右に切る"
 
         # 左矢印を検出した場合、操舵を左に切る
-        elif "Left-arrow" in detection_list:
-            offset_x = detections[detection_id["Left-arrow"]
+        elif "Left-arrow" in detection_dict:
+            offset_x = detections[detection_dict["Left-arrow"]
                                   ].spatialCoordinates.x - OFFSET_ARROW_X
             angle = np.rad2deg(
-                np.arctan(offset_x/detection.spatialCoordinates.z))
+                np.arctan(offset_x/detections[detection_dict["Left-arrow"]
+                                              ].spatialCoordinates.z))
             converted_angle = (angle/90)*100
             steer_pwm_duty = converted_angle
             message = "左矢印を検出し操舵を左に切る"
 
         # 青コーンのみ検出かつXが+側の場合、操舵を右に切る
-        elif "Blue-cone" in detection_list and detections[detection_id["Blue-cone"]].spatialCoordinates.x > -100:
-            steer_pwm_duty == -100
+        elif "Blue-cone" in detection_dict and detections[detection_dict["Blue-cone"]].spatialCoordinates.x > -100:
+            steer_pwm_duty = -100
             message = "青コーンのみ検出かつXが+側の場合、操舵を右に切る"
 
         # 青コーンと緑コーンを検出した場合、中間に舵を切る
-        elif "Blue-cone" and "Green-cone" in detection_list:
-            blue_x = detections[detection_id["Blue-cone"]
+        elif "Blue-cone" in detection_dict and "Green-cone" in detection_dict:
+            blue_x = detections[detection_dict["Blue-cone"]
                                 ].spatialCoordinates.x
-            green_x = detections[detection_id["Green-cone"]
+            green_x = detections[detection_dict["Green-cone"]
                                  ].spatialCoordinates.x
             target_x = (blue_x+green_x)/2
             steer_pwm_duty = target_x*(-1)
             message = "青コーンと緑コーンを検出した場合、中間に舵を切る"
 
         # 緑コーンのみ検出かつXが-側の場合、操舵を左に切る
-        elif "Green-cone" in detection_list and detection_id["Green-cone"].spatialCoordinates.x < 100:
-            steer_pwm_duty == 100
+        elif "Green-cone" in detection_dict and detections[detection_dict["Green-cone"]].spatialCoordinates.x < 100:
+            steer_pwm_duty = 100
             message = "緑コーンのみ検出かつXが-側の場合、操舵を左に切る"
 
         # 緑コーンと橙コーンを検出した場合、中間に舵を切る
-        elif "Green-cone" and "Orange-cone" in detection_list:
-            green_x = detections[detection_id["Green-cone"]
+        elif "Green-cone" in detection_dict and "Orange-cone" in detection_dict:
+            green_x = detections[detection_dict["Green-cone"]
                                  ].spatialCoordinates.x
-            orange_x = detections[detection_id["Orange-cone"]
+            orange_x = detections[detection_dict["Orange-cone"]
                                   ].spatialCoordinates.x
             target_x = (green_x+orange_x)/2
             steer_pwm_duty = target_x*(-1)
             message = "緑コーンと橙コーンを検出した場合、中間に舵を切る"
 
         # 橙コーンのみ検出かつXが+側の場合、操舵を右に切る
-        elif "Orange-cone" in detection_list and detection_id["Orange-cone"].spatialCoordinates.x > -100:
-            steer_pwm_duty == -100
+        elif "Orange-cone" in detection_dict and detections[detection_dict["Orange-cone"]].spatialCoordinates.x > -100:
+            steer_pwm_duty = -100
             message = "橙コーンのみ検出かつXが+側の場合、操舵を右に切る"
 
-        print("*******************************************************************")
-        print(message)
+        # ピンクラインを検出したら減速する
+        elif "Pink-line" in detection_dict and detections[detection_dict["Pink-line"]].spatialCoordinates.z < 200:
+            throttle_pwm_duty = 80
+            message = "ピンクラインを検出したら減速する"
 
-    return steer_pwm_duty
+        # 芝生を検出したら加速する
+        elif "Shibafu" in detection_dict and detections[detection_dict["Shibafu"]].spatialCoordinates.z < 600:
+            throttle_pwm_duty = 120
+            message = "芝生を検出したら加速する"
+
+        # パーキングモード時、P1-Greenに向かう
+        elif parking_mode == True and "P1-Green" in detection_dict:
+            # x軸が100mm以上離れていたら操舵補正する
+            if detections[detection_dict["P1-Green"]].spatialCoordinates.x > 100:
+                steer_pwm_duty = -80
+            elif detections[detection_dict["P1-Green"]].spatialCoordinates.x < -100:
+                steer_pwm_duty = 80
+            if detections[detection_dict["P1-Green"]].spatialCoordinates.z < 200:
+                throttle_pwm_duty = 50
+            elif detections[detection_dict["P1-Green"]].spatialCoordinates.z < 100:
+                throttle_pwm_duty = 0
+
+        print("*******************************************************************")
+        print("検出物：", detection_dict)
+        print(message)
+        print()
+
+    return steer_pwm_duty, throttle_pwm_duty
 
 
 def detect() -> None:
@@ -271,6 +286,9 @@ def detect() -> None:
         save_fps=args.save_fps,
     )
     labels = oakd_spatial_yolo.get_labels()
+    print('******************************************************')
+    print('*************** Enterを押して走行開始! ***************')
+    print('******************************************************')
     while True:
         frame = None
         try:
@@ -291,6 +309,10 @@ def detect() -> None:
 
 def run() -> None:
     """走行用スレッド"""
+    global start_time
+    global current_time
+    global parking_mode
+
     # データ記録用配列作成
     d = np.zeros(config.N_ultrasonics)
     d_stack = np.zeros(config.N_ultrasonics+3)
@@ -326,12 +348,6 @@ def run() -> None:
             model, config.model_path, None, config.model_dir)
         print(model)
 
-    # 　imuの初期化
-    if config.HAVE_IMU:
-        imu = gyro.BNO055()
-        # 計測例
-        # angle, acc, gyr = imu.measure_set()
-
     # コントローラーの初期化
     if config.HAVE_CONTROLLER:
         joystick = Joystick()
@@ -341,15 +357,12 @@ def run() -> None:
         print("Starting mode: ", mode)
 
     # 一時停止（Enterを押すとプログラム実行開始）
-    print('*************** Enterを押して走行開始! ***************')
+    # print('*************** Enterを押して走行開始! ***************')
     input()
 
     # 途中でモータースイッチを切り替えたとき用に再度モーター初期化
     # 初期化に成功するとピッピッピ！と３回音がなる、失敗時（PWMの値で約370-390以外の値が入りっぱなし）はピ...ピ...∞
     motor.set_throttle_pwm_duty(config.STOP)
-
-    # fpv
-    # pass
 
     # 開始時間
     start_time = time.time()
@@ -357,33 +370,33 @@ def run() -> None:
     # ここから走行ループ
     try:
         while True:
+            # 現在時間を格納
+            current_time = time.time()
+
             # 認知（超音波センサ計測）
             message = measure_ultrasonic(d, ultrasonics)
 
             # 判断（プランニング）
             steer_pwm_duty, throttle_pwm_duty = planning_ultrasonic(
                 plan, ultrasonics, model)
+            steer_pwm_duty = steer_pwm_duty * 1.3
 
             # 画像認識
-            steer_pwm_duty = planning_detection(steer_pwm_duty)
+            steer_pwm_duty, throttle_pwm_duty = planning_detection(
+                steer_pwm_duty, throttle_pwm_duty)
 
             # 操作（ステアリング、アクセル）
             if config.HAVE_CONTROLLER:
                 steer_pwm_duty, throttle_pwm_duty, recording = control_joystick(
                     joystick, motor, steer_pwm_duty, throttle_pwm_duty)
 
+            # 一定時間経過後駐車モードにする
+            if current_time > start_time + PARKING_TIME:
+                parking_mode = True
+
             # モータードライバーに出力をセット
-            # 補正（動的制御）
-            # Gthr:スロットル（前後方向）のゲイン、Gstr:ステアリング（横方向）のゲイン
-            # ヨー角の角速度でオーバーステア/スリップに対しカウンターステア
-            if config.mode_plan == "GCounter":
-                imu.GCounter()
-                motor.set_steer_pwm_duty(steer_pwm_duty * (1 - 2 * imu.Gstr))
-                motor.set_throttle_pwm_duty(
-                    throttle_pwm_duty * (1 - 2 * imu.Gthr))
-            else:
-                motor.set_steer_pwm_duty(steer_pwm_duty)
-                motor.set_throttle_pwm_duty(throttle_pwm_duty)
+            motor.set_steer_pwm_duty(steer_pwm_duty)
+            motor.set_throttle_pwm_duty(throttle_pwm_duty)
 
             # 記録（タイムスタンプと距離データを配列に記録）
             ts = time.time()
@@ -403,7 +416,7 @@ def run() -> None:
                 print("Rec:{0}, Mode:{1}, RunTime:{2:>5}".format(
                     recording, mode, ts_run))
                 print("Str:{0:>1}, Thr:{1:>1}".format(
-                    steer_pwm_duty, throttle_pwm_duty))
+                    int(steer_pwm_duty), int(throttle_pwm_duty)))
                 print("Uls:[ {0}]".format(message))
 
             # 後退/停止操作（簡便のため、判断も同時に実施）
@@ -415,7 +428,8 @@ def run() -> None:
                           ultrasonics["FrRH"], ultrasonics["FrLH"])
                 if plan.flag_back == True:
                     for _ in range(config.recovery_braking):
-                        motor.set_steer_pwm_duty(config.NUTRAL)
+                        # motor.set_steer_pwm_duty(config.NUTRAL)
+                        motor.set_steer_pwm_duty(-70)  # バック時ハンドルを右に切る
                         motor.set_throttle_pwm_duty(config.REVERSE)
                         time.sleep(config.recovery_time)
                 else:
@@ -449,7 +463,6 @@ def run() -> None:
         header = header[:-1]
         np.savetxt(config.record_filename,
                    d_stack[1:], delimiter=',',  fmt='%10.2f', header=header, comments="")
-        # np.savetxt(config.record_filename, d_stack[1:], fmt='4f',header=header, comments="")
         print('記録停止')
         print("記録保存--> ", config.record_filename)
         if config.HAVE_CAMERA:
