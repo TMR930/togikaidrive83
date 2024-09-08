@@ -187,25 +187,27 @@ def planning_detection(steer_pwm_duty, throttle_pwm_duty):
             cnt_id += 1
 
         # 右矢印を検出した場合、操舵を右に切る
-        if "Right-arrow" in detection_dict:
-            offset_x = detections[detection_dict["Right-arrow"]
-                                  ].spatialCoordinates.x + OFFSET_ARROW_X
-            angle = np.rad2deg(
-                np.arctan(offset_x/detections[detection_dict["Right-arrow"]
-                                              ].spatialCoordinates.z))
-            converted_angle = (angle/90)*100  # 角度を-100から100の範囲に変換
-            steer_pwm_duty = converted_angle
+        if "Right-arrow" in detection_dict and detections[detection_dict["Right-arrow"]].spatialCoordinates.x < 100:
+            # offset_x = detections[detection_dict["Right-arrow"]
+            #                       ].spatialCoordinates.x + OFFSET_ARROW_X
+            # angle = np.rad2deg(
+            #     np.arctan(offset_x/detections[detection_dict["Right-arrow"]
+            #                                   ].spatialCoordinates.z))
+            # converted_angle = (angle/90)*100  # 角度を-100から100の範囲に変換
+            # steer_pwm_duty = converted_angle
+            steer_pwm_duty = -100
             message = "右矢印を検出し操舵を右に切る"
 
         # 左矢印を検出した場合、操舵を左に切る
-        elif "Left-arrow" in detection_dict:
-            offset_x = detections[detection_dict["Left-arrow"]
-                                  ].spatialCoordinates.x - OFFSET_ARROW_X
-            angle = np.rad2deg(
-                np.arctan(offset_x/detections[detection_dict["Left-arrow"]
-                                              ].spatialCoordinates.z))
-            converted_angle = (angle/90)*100
-            steer_pwm_duty = converted_angle
+        elif "Left-arrow" in detection_dict and detections[detection_dict["Left-arrow"]].spatialCoordinates.x > -100:
+            # offset_x = detections[detection_dict["Left-arrow"]
+            #                       ].spatialCoordinates.x - OFFSET_ARROW_X
+            # angle = np.rad2deg(
+            #     np.arctan(offset_x/detections[detection_dict["Left-arrow"]
+            #                                   ].spatialCoordinates.z))
+            # converted_angle = (angle/90)*100
+            # steer_pwm_duty = converted_angle
+            steer_pwm_duty = 100
             message = "左矢印を検出し操舵を左に切る"
 
         # 青コーンのみ検出かつXが+側の場合、操舵を右に切る
@@ -266,9 +268,9 @@ def planning_detection(steer_pwm_duty, throttle_pwm_duty):
                 throttle_pwm_duty = 0
 
         print("*******************************************************************")
+        print()
         print("検出物：", detection_dict)
         print(message)
-        print()
 
     return steer_pwm_duty, throttle_pwm_duty
 
