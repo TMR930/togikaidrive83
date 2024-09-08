@@ -188,7 +188,7 @@ def train_model(model, dataloader, criterion, optimizer, start_epoch=0, epochs=c
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
     plt.legend()
-    loss_history_path = config.model_dir+'/'+'loss_history_'+ csv_file +'.png'
+    loss_history_path = config.model_dir+'/'+'loss_history_'+ csv_file + str(datetime.datetime.now()) + '.png'
     plt.savefig(loss_history_path)
     plt.close()
     print("Lossの履歴を保存しました: "+loss_history_path)
