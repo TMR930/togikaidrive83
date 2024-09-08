@@ -80,8 +80,8 @@ if __name__ == "__main__":
         "--model",
         help="Provide model name or model path for inference",
         # default="yolov7tiny_coco_416x416",
-        default="models/aicar_20240825.blob",
-
+        # default="models/aicar_20240825.blob",
+        default="models/aicar_20240908.blob",
         type=str,
     )
     parser.add_argument(
@@ -89,7 +89,8 @@ if __name__ == "__main__":
         "--config",
         help="Provide config path for inference",
         # default="json/yolov7tiny_coco_416x416.json",
-        default="json/aicar_20240825.json",
+        # default="json/aicar_20240825.json",
+        default="json/aicar_20240908.json",
         type=str,
     )
     parser.add_argument(

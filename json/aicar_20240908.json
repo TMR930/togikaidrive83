@@ -1,0 +1,69 @@
+{
+    "model": {
+        "xml": "best.xml",
+        "bin": "best.bin"
+    },
+    "nn_config": {
+        "output_format": "detection",
+        "NN_family": "YOLO",
+        "input_size": "640x640",
+        "NN_specific_metadata": {
+            "classes": 10,
+            "coordinates": 4,
+            "anchors": [
+                18.203125,
+                10.3359375,
+                28.421875,
+                27.828125,
+                81.0,
+                29.765625,
+                93.625,
+                67.75,
+                220.625,
+                51.75,
+                514.0,
+                26.84375,
+                137.375,
+                110.375,
+                234.875,
+                193.75,
+                607.5,
+                194.0
+            ],
+            "anchor_masks": {
+                "side80": [
+                    0,
+                    1,
+                    2
+                ],
+                "side40": [
+                    3,
+                    4,
+                    5
+                ],
+                "side20": [
+                    6,
+                    7,
+                    8
+                ]
+            },
+            "iou_threshold": 0.5,
+            "confidence_threshold": 0.5
+        }
+    },
+    "mappings": {
+        "labels": [
+            "P1-Green",
+            "P2-Blue",
+            "P3-Gray",
+            "Pink-line",
+            "Shibafu",
+            "Green-cone",
+            "Left-arrow",
+            "Blue-cone",
+            "Right-arrow",
+            "Orange-cone"
+        ]
+    },
+    "version": 1
+}
