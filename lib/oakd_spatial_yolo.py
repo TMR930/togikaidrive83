@@ -17,7 +17,7 @@ import numpy as np
 
 from .util import HostSync, TextHelper
 
-DISPLAY_WINDOW_SIZE_RATE = 2.0
+DISPLAY_WINDOW_SIZE_RATE = 1.0
 idColors = np.random.random(size=(256, 3)) * 256
 
 
