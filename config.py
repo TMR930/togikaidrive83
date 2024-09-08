@@ -35,7 +35,7 @@ model_plan_list = ["GoStraight",
                    "Right_Left_3","Right_Left_3_Records",
                    "RightHand","RightHand_PID","LeftHand","LeftHand_PID",
                    "NN"]
-mode_plan = "Right_Left_3_Records"
+mode_plan = "NN"
 
 # 判断モード関連パラメータ
 ## 過去の操作値記録回数
@@ -126,13 +126,13 @@ if mode_plan == "NN": HAVE_NN = True
 
 ## 学習済みモデルのパス
 model_dir = "models"
-model_name = "model_20240825_record_20240825_110013.csv_epoch_30_uls_RrLH_FrLH_Fr_FrRH_RrRH.pth"
+model_name = "model_20240906_record_20240905_235556.csv_epoch_30_uls_RrLH_FrLH_Fr_FrRH_RrRH.pth"
 model_path = os.path.join(model_dir, model_name)
 ## モデルと学習のハイパーパラメータ設定
 hidden_dim = 64 #（隠れ層のノード数）
-num_hidden_layers = 6 #（隠れ層の数）def:30
-batch_size = 8
-epochs = 30
+num_hidden_layers = 6 #（隠れ層の数）
+batch_size = 16
+epochs = 30  # def:30
 
 ## モデルの種類
 model_type = "linear" #linear, categorical

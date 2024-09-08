@@ -191,6 +191,7 @@ def main() -> None:
             # 判断（プランニング）
             steer_pwm_duty, throttle_pwm_duty = planning_ultrasonic(
                 plan, ultrasonics, model)
+            steer_pwm_duty = steer_pwm_duty * 1.3
 
             # 操作（ステアリング、アクセル）
             if config.HAVE_CONTROLLER:
