@@ -55,7 +55,7 @@ parser.add_argument(
     help="Provide config path for inference",
     # default="json/yolov7tiny_coco_416x416.json",
     # default="json/aicar_20240825.json",
-    default="json/aicar_20240908.json", 
+    default="json/aicar_20240908.json",
     type=str,
 )
 parser.add_argument(
@@ -173,6 +173,8 @@ def planning_detection(steer_pwm_duty, throttle_pwm_duty):
     objects = []
     detection_dict = {}
     message = ""
+    norm_max = 1000  # ±1mの範囲で正規化
+    norm_min = -1000
 
     if (len(detections)) >= 1:
         cnt_id = 0
@@ -224,7 +226,8 @@ def planning_detection(steer_pwm_duty, throttle_pwm_duty):
             green_x = detections[detection_dict["Green-cone"]
                                  ].spatialCoordinates.x
             target_x = (blue_x+green_x)/2
-            steer_pwm_duty = target_x*(-1)
+            # 正規化し100倍する
+            steer_pwm_duty = (target_x-norm_min)/(norm_max-norm_min)*(-100)
             message = "青コーンと緑コーンを検出した場合、中間に舵を切る"
 
         # 緑コーンのみ検出かつXが-側の場合、操舵を左に切る
@@ -239,7 +242,7 @@ def planning_detection(steer_pwm_duty, throttle_pwm_duty):
             orange_x = detections[detection_dict["Orange-cone"]
                                   ].spatialCoordinates.x
             target_x = (green_x+orange_x)/2
-            steer_pwm_duty = target_x*(-1)
+            steer_pwm_duty = (target_x-norm_min)/(norm_max-norm_min)*(-100)
             message = "緑コーンと橙コーンを検出した場合、中間に舵を切る"
 
         # 橙コーンのみ検出かつXが+側の場合、操舵を右に切る
@@ -273,6 +276,12 @@ def planning_detection(steer_pwm_duty, throttle_pwm_duty):
         print()
         print("検出物：", detection_dict)
         print(message)
+
+        # 上限値超えを修正
+        if steer_pwm_duty > 100:
+            steer_pwm_duty = 100
+        elif steer_pwm_duty < -100:
+            steer_pwm_duty = -100
 
     return steer_pwm_duty, throttle_pwm_duty
 
