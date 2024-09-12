@@ -4,10 +4,11 @@ import os
 
 # モーター出力パラメータ （デューティー比：-100~100で設定）
 # スロットル用
-FORWARD_S = 120 #ストレートでの値, joy_accel1
-FORWARD_C = 80 #カーブでのの値, joy_accel2
+FORWARD_S = 60 #ストレートでの値, joy_accel1
+FORWARD_C = 40 #カーブでのの値, joy_accel2
 STOP = 0
-REVERSE = -100 
+REVERSE = -50
+# REVERSE = -100 
 # ステアリング用
 LEFT = 100 #<=100
 NUTRAL = 0 
@@ -16,11 +17,15 @@ RIGHT = -100 #<=100
 # 超音波センサの検知パラメータ 
 ## 距離関連、単位はmm
 ### 前壁の停止/検知距離
-DETECTION_DISTANCE_STOP = 250
-DETECTION_DISTANCE_BACK = 150
+# DETECTION_DISTANCE_STOP = 250
+# DETECTION_DISTANCE_BACK = 150
+DETECTION_DISTANCE_STOP = 400
+DETECTION_DISTANCE_BACK = 300
 DETECTION_DISTANCE_Fr = 150
 ### 右左折判定基準距離
 DETECTION_DISTANCE_RL = 550
+# DETECTION_DISTANCE_RL = 650
+
 ### 右/左手法目標距離
 DETECTION_DISTANCE_TARGET = 200 #目標距離
 DETECTION_DISTANCE_RANGE = 50/2 #修正認知半径距離
@@ -36,6 +41,7 @@ model_plan_list = ["GoStraight",
                    "RightHand","RightHand_PID","LeftHand","LeftHand_PID",
                    "NN"]
 mode_plan = "NN"
+# mode_plan = "NN"
 
 # 判断モード関連パラメータ
 ## 過去の操作値記録回数
@@ -126,7 +132,9 @@ if mode_plan == "NN": HAVE_NN = True
 
 ## 学習済みモデルのパス
 model_dir = "models"
-model_name = "model_20240906_record_20240905_235556.csv_epoch_30_uls_RrLH_FrLH_Fr_FrRH_RrRH.pth"
+# model_name = "model_20240906_record_20240905_235556.csv_epoch_100_uls_RrLH_FrLH_Fr_FrRH_RrRH.pth"
+model_name = "model_20240910_champ2_record_20240910_005358.csv_epoch_50_uls_RrLH_FrLH_Fr_FrRH_RrRH.pth"
+
 model_path = os.path.join(model_dir, model_name)
 ## モデルと学習のハイパーパラメータ設定
 hidden_dim = 64 #（隠れ層のノード数）
