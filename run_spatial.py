@@ -36,12 +36,17 @@ DETECTION_NORM_MAX = 300
 DETECTION_NORM_MIN = -300
 PARKING_TIME = 500  # 一定時間経過したら駐車モードにする(sec)
 CONTINUE_MOVE_TIME = 0.3  # 認識後の動作継続時間(sec)
-ARROW_OFFSET_X = 250  # 矢印看板から走行位置までのX座標オフセット(mm)
-CORN_OFFSET_X = 200
-DETECTION_PINKLINE_DIST = 750  # ピンクライン検出で減速し始める距離
-DETECTION_SHIBAFU_DIST = 1250  # 芝生検出で加速し始める距離
+ARROW_OFFSET_X = 250  # 矢印看板X座標から目標走行位置までのX座標オフセット(mm)
+CORN_OFFSET_X = 200  # コーンX座標から目標走行位置までのX座標オフセット(mm)
+PINKLINE_OFFSET_X = 0  # ピンクラインX座標から目標走行位置までのX座標オフセット(mm)
+SHIBAFU_OFFSET_X = 300  # 芝生エリアX座標から目標走行位置までのX座標オフセット(mm)
+
 
 DETECTION_STEER_COEFFICIENT = 1.2  # 認識後のステアリング動作係数
+DETECTION_PINKLINE_DIST = 750  # ピンクライン検出で減速し始める距離
+DETECTION_SHIBAFU_DIST = 1250  # 芝生検出で加速し始める距離
+SLOW = 60  # ピンクライン検知で減速するPWM値
+DASH = 80  # 芝生エリア検知で加速するPWM値
 
 detections = []  # 認識結果を格納しスレッド間で共有
 parking_mode = False
@@ -277,8 +282,8 @@ def planning_detection(steer_pwm_duty, throttle_pwm_duty):
                                         DETECTION_NORM_MIN)*(-100)
             message = "緑コーンのみ検出かつXが-側の場合、操舵を左に切る"
 
-        # 緑コーンのみ検出かつXが+側の場合、操舵を左に切る
-        elif "Green-cone" in detection_dict and detections[detection_dict["Green-cone"]].spatialCoordinates.x < 500:
+        # 緑コーンのみ検出かつXが+側の場合、操舵を右に切る
+        elif "Green-cone" in detection_dict and detections[detection_dict["Green-cone"]].spatialCoordinates.x > (CORN_OFFSET_X*-1):
             green_x = detections[detection_dict["Green-cone"]
                                  ].spatialCoordinates.x
             green_x -= CORN_OFFSET_X
@@ -307,14 +312,24 @@ def planning_detection(steer_pwm_duty, throttle_pwm_duty):
             message = "橙コーンのみ検出かつXが+側の場合、操舵を右に切る"
 
         # ピンクラインを検出したら減速する
-        elif "Pink-line" in detection_dict and detections[detection_dict["Pink-line"]].spatialCoordinates.z < DETECTION_PINKLINE_DIST:
-            throttle_pwm_duty = 60
-            message = "ピンクラインを検出したら減速する"
+        elif "Pink-line" in detection_dict:
+            if detections[detection_dict["Pink-line"]].spatialCoordinates.z < DETECTION_PINKLINE_DIST:
+                throttle_pwm_duty = SLOW
+                message = "ピンクラインを検出したら減速する"
+            elif detections[detection_dict["Pink-line"]].spatialCoordinates.z >= DETECTION_PINKLINE_DIST:
+                throttle_pwm_duty = DASH
+            steer_pwm_duty = (detections[detection_dict["Pink-line"]].spatialCoordinates.x) / \
+                (DETECTION_NORM_MAX-DETECTION_NORM_MIN)*(-100)
 
-        # 芝生を検出したら加速する
-        elif "Shibafu" in detection_dict and detections[detection_dict["Shibafu"]].spatialCoordinates.z < DETECTION_SHIBAFU_DIST:
-            throttle_pwm_duty = 80
-            message = "芝生を検出したら加速する"
+        # 芝生を検出したら加速、右サイドを走行する
+        elif "Shibafu" in detection_dict:
+            if detections[detection_dict["Shibafu"]].spatialCoordinates.z < DETECTION_SHIBAFU_DIST:
+                throttle_pwm_duty = DASH
+                message = "芝生を検出したら加速する"
+            shibafu_x = detections[detection_dict["Shibafu"]
+                                   ].spatialCoordinates.x + SHIBAFU_OFFSET_X
+            steer_pwm_duty = (shibafu_x) / \
+                (DETECTION_NORM_MAX-DETECTION_NORM_MIN)*(-100)
 
         # パーキングモード時、P1-Greenに向かう
         elif parking_mode == True and "P1-Green" in detection_dict:
