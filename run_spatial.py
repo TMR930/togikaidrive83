@@ -108,6 +108,31 @@ def measure_ultrasonic(d, ultrasonics):
     return message
 
 
+def checking_ultrasonic(ultrasonics):
+    """超音波センサーをチェックする"""
+    anomaly = False
+    print("*************** 超音波センサーチェック ***************")
+    for key in config.ultrasonics_list:
+        time.sleep(0.1)
+        print(key, ultrasonics[key].dis)
+        if ultrasonics[key].dis == 0:
+            print(" センサーが異常です")
+            anomaly = True
+        elif ultrasonics[key].dis <= 200:
+            print(" センサーが200mm以内です")
+            anomaly = True
+        else:
+            print(" 異常なし")
+    if anomaly:
+        print()
+        print("センサーに異常があります. センサーを確認してください.")
+        print()
+    else:
+        print()
+        print("異常ありません. 走行を開始してください.")
+        print()
+
+
 def planning_ultrasonic(plan, ultrasonics, model):
     # 判断（プランニング）
     # 使う超音波センサをconfig.pyのultrasonics_listで設定必要
@@ -261,7 +286,6 @@ def planning_detection(steer_pwm_duty, throttle_pwm_duty):
                                         DETECTION_NORM_MIN)*(-100)
             message = "緑コーンのみ検出かつXが-側の場合、操舵を左に切る"
 
-
         # 緑コーンと橙コーンを検出した場合、中間に舵を切る
         elif "Green-cone" in detection_dict and "Orange-cone" in detection_dict:
             green_x = detections[detection_dict["Green-cone"]
@@ -414,6 +438,10 @@ def run() -> None:
             config.HAVE_CONTROLLER = False
         mode = joystick.mode[0]
         print("Starting mode: ", mode)
+
+    # 超音波センサーチェック
+    measure_ultrasonic(d, ultrasonics)
+    checking_ultrasonic(ultrasonics)
 
     # 一時停止（Enterを押すとプログラム実行開始）
     # print('*************** Enterを押して走行開始! ***************')
