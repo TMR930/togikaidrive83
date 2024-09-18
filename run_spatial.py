@@ -32,8 +32,8 @@ if config.HAVE_NN:
 
 
 DETECTION_DISTANCE_LIMIT = 2500  # 一定距離以上の検出物をカット(mm)
-DETECTION_NORM_MAX = 300
-DETECTION_NORM_MIN = -300
+DETECTION_NORM_MAX = 250
+DETECTION_NORM_MIN = -250
 PARKING_TIME = 500  # 一定時間経過したら駐車モードにする(sec)
 CONTINUE_MOVE_TIME = 0.3  # 認識後の動作継続時間(sec)
 ARROW_OFFSET_X = 250  # 矢印看板X座標から目標走行位置までのX座標オフセット(mm)
@@ -41,10 +41,9 @@ CORN_OFFSET_X = 200  # コーンX座標から目標走行位置までのX座標�
 PINKLINE_OFFSET_X = 0  # ピンクラインX座標から目標走行位置までのX座標オフセット(mm)
 SHIBAFU_OFFSET_X = 300  # 芝生エリアX座標から目標走行位置までのX座標オフセット(mm)
 
-
-DETECTION_STEER_COEFFICIENT = 1.2  # 認識後のステアリング動作係数
-DETECTION_PINKLINE_DIST = 750  # ピンクライン検出で減速し始める距離
-DETECTION_SHIBAFU_DIST = 1250  # 芝生検出で加速し始める距離
+DETECTION_STEER_COEFFICIENT = 1.0  # 認識後のステアリング動作係数
+DETECTION_PINKLINE_DIST = 750  # ピンクライン検出で減速し始める距離(mm)
+DETECTION_SHIBAFU_DIST = 1250  # 芝生検出で加速し始める距離(mm)
 SLOW = 60  # ピンクライン検知で減速するPWM値
 DASH = 80  # 芝生エリア検知で加速するPWM値
 
@@ -175,7 +174,6 @@ def planning_ultrasonic(plan, ultrasonics, model):
         steer_pwm_duty, throttle_pwm_duty = plan.NN(model, *args)
     else:
         print("デフォルトの判断モードの選択ではありません, コードを書き換えてオリジナルのモードを実装しよう!")
-
     return steer_pwm_duty, throttle_pwm_duty
 
 
@@ -208,165 +206,169 @@ def control_joystick(joystick, motor, steer_pwm_duty, throttle_pwm_duty):
     return steer_pwm_duty, throttle_pwm_duty, recording
 
 
-def planning_detection(steer_pwm_duty, throttle_pwm_duty):
-    """認識結果をもとに走行判断"""
-    global parking_mode
-    global detection_time
+def calc_normalization(pos_x):
+    """入力されたx座標からステアリング値を算出"""
+    steer_pwm_duty = (pos_x) / \
+        (DETECTION_NORM_MAX-DETECTION_NORM_MIN)*(-100)
+    return steer_pwm_duty
+
+
+def judge_control(steer_pwm_duty, throttle_pwm_duty, detections, detection_dict):
     global detection_steer_pwm_duty
     global detection_throttle_pwm_duty
-
-    objects = []
-    detection_dict = {}
     message = ""
 
-    if (len(detections)) >= 1:
-        cnt_id = 0
-        for detection in detections:
-            object = Object
-            object.name = labels[detection.label]
-            object.pos[0] = detection.spatialCoordinates.x
-            object.pos[1] = detection.spatialCoordinates.y
-            object.pos[2] = detection.spatialCoordinates.z
-            # リミット以上の検出物を除外しそれ以外をリスト格納する
-            if detection.spatialCoordinates.z < DETECTION_DISTANCE_LIMIT:
-                objects.append(object)
-                detection_dict[object.name] = cnt_id
-            cnt_id += 1
+    # 右矢印を検出した場合、操舵を右に切る
+    if "Right-arrow" in detection_dict and detections[detection_dict["Right-arrow"]].spatialCoordinates.x < ARROW_OFFSET_X:
+        right_arrow_x = detections[detection_dict["Right-arrow"]
+                                   ].spatialCoordinates.x
+        right_arrow_x += ARROW_OFFSET_X
+        steer_pwm_duty = calc_normalization(right_arrow_x)
+        message = "右矢印を検出し操舵を右に切る"
 
-        detection_time = current_time
-
-        # 右矢印を検出した場合、操舵を右に切る
-        if "Right-arrow" in detection_dict and detections[detection_dict["Right-arrow"]].spatialCoordinates.x < ARROW_OFFSET_X:
-            right_arrow_x = detections[detection_dict["Right-arrow"]
-                                       ].spatialCoordinates.x
-            right_arrow_x += ARROW_OFFSET_X
-            steer_pwm_duty = (right_arrow_x) / \
-                (DETECTION_NORM_MAX-DETECTION_NORM_MIN)*(-100)
-            message = "右矢印を検出し操舵を右に切る"
-
-        # 左矢印を検出した場合、操舵を左に切る
-        elif "Left-arrow" in detection_dict and detections[detection_dict["Left-arrow"]].spatialCoordinates.x > (ARROW_OFFSET_X*-1):
-            left_arrow_x = detections[detection_dict["Left-arrow"]
-                                      ].spatialCoordinates.x
-            left_arrow_x -= ARROW_OFFSET_X
-            steer_pwm_duty = (left_arrow_x) / \
-                (DETECTION_NORM_MAX-DETECTION_NORM_MIN)*(-100)
-            message = "左矢印を検出し操舵を左に切る"
-
-        # 青コーンのみ検出かつXが+側の場合、操舵を右に切る
-        elif "Blue-cone" in detection_dict and int(detections[detection_dict["Blue-cone"]].spatialCoordinates.x) > (CORN_OFFSET_X*-1):
-            blue_x = detections[detection_dict["Blue-cone"]
-                                ].spatialCoordinates.x
-            blue_x += CORN_OFFSET_X
-            steer_pwm_duty = (blue_x)/(DETECTION_NORM_MAX -
-                                       DETECTION_NORM_MIN)*(-100)
-            message = "青コーンのみ検出かつXが+側の場合、操舵を右に切る"
-
-        # 青コーンと緑コーンを検出した場合、中間に舵を切る
-        elif "Blue-cone" in detection_dict and "Green-cone" in detection_dict:
-            blue_x = detections[detection_dict["Blue-cone"]
-                                ].spatialCoordinates.x
-            green_x = detections[detection_dict["Green-cone"]
-                                 ].spatialCoordinates.x
-            target_x = (blue_x+green_x)
-            steer_pwm_duty = (target_x)/(DETECTION_NORM_MAX -
-                                         DETECTION_NORM_MIN)*(-100)
-            message = "青コーンと緑コーンを検出した場合、中間に舵を切る"
-
-        # 緑コーンのみ検出かつXが-側の場合、操舵を左に切る
-        elif "Green-cone" in detection_dict and detections[detection_dict["Green-cone"]].spatialCoordinates.x < CORN_OFFSET_X:
-            green_x = detections[detection_dict["Green-cone"]
-                                 ].spatialCoordinates.x
-            green_x -= CORN_OFFSET_X
-            steer_pwm_duty = (green_x)/(DETECTION_NORM_MAX -
-                                        DETECTION_NORM_MIN)*(-100)
-            message = "緑コーンのみ検出かつXが-側の場合、操舵を左に切る"
-
-        # 緑コーンのみ検出かつXが+側の場合、操舵を右に切る
-        elif "Green-cone" in detection_dict and detections[detection_dict["Green-cone"]].spatialCoordinates.x > (CORN_OFFSET_X*-1):
-            green_x = detections[detection_dict["Green-cone"]
-                                 ].spatialCoordinates.x
-            green_x -= CORN_OFFSET_X
-            steer_pwm_duty = (green_x)/(DETECTION_NORM_MAX -
-                                        DETECTION_NORM_MIN)*(-100)
-            message = "緑コーンのみ検出かつXが-側の場合、操舵を左に切る"
-
-        # 緑コーンと橙コーンを検出した場合、中間に舵を切る
-        elif "Green-cone" in detection_dict and "Orange-cone" in detection_dict:
-            green_x = detections[detection_dict["Green-cone"]
-                                 ].spatialCoordinates.x
-            orange_x = detections[detection_dict["Orange-cone"]
+    # 左矢印を検出した場合、操舵を左に切る
+    elif "Left-arrow" in detection_dict and detections[detection_dict["Left-arrow"]].spatialCoordinates.x > (ARROW_OFFSET_X*-1):
+        left_arrow_x = detections[detection_dict["Left-arrow"]
                                   ].spatialCoordinates.x
-            target_x = (green_x+orange_x)
-            steer_pwm_duty = (target_x)/(DETECTION_NORM_MAX -
-                                         DETECTION_NORM_MIN)*(-100)
-            message = "緑コーンと橙コーンを検出した場合、中間に舵を切る"
+        left_arrow_x -= ARROW_OFFSET_X
+        steer_pwm_duty = calc_normalization(left_arrow_x)
+        message = "左矢印を検出し操舵を左に切る"
 
-        # 橙コーンのみ検出かつXが+側の場合、操舵を右に切る
-        elif "Orange-cone" in detection_dict and detections[detection_dict["Orange-cone"]].spatialCoordinates.x > (CORN_OFFSET_X*-1):
-            orange_x = detections[detection_dict["Orange-cone"]
-                                  ].spatialCoordinates.x
-            orange_x += CORN_OFFSET_X
-            steer_pwm_duty = (orange_x)/(DETECTION_NORM_MAX -
-                                         DETECTION_NORM_MIN)*(-100)
-            message = "橙コーンのみ検出かつXが+側の場合、操舵を右に切る"
+    # 青コーンのみ検出かつXが+側の場合、操舵を右に切る
+    elif "Blue-cone" in detection_dict and int(detections[detection_dict["Blue-cone"]].spatialCoordinates.x) > (CORN_OFFSET_X*-1):
+        blue_x = detections[detection_dict["Blue-cone"]
+                            ].spatialCoordinates.x
+        blue_x += CORN_OFFSET_X
+        steer_pwm_duty = calc_normalization(blue_x)
+        message = "青コーンのみ検出かつXが+側の場合、操舵を右に切る"
 
-        # ピンクラインを検出したら減速する
-        elif "Pink-line" in detection_dict:
-            if detections[detection_dict["Pink-line"]].spatialCoordinates.z < DETECTION_PINKLINE_DIST:
-                throttle_pwm_duty = SLOW
-                message = "ピンクラインを検出したら減速する"
-            elif detections[detection_dict["Pink-line"]].spatialCoordinates.z >= DETECTION_PINKLINE_DIST:
-                throttle_pwm_duty = DASH
-            steer_pwm_duty = (detections[detection_dict["Pink-line"]].spatialCoordinates.x) / \
-                (DETECTION_NORM_MAX-DETECTION_NORM_MIN)*(-100)
+    # 青コーンと緑コーンを検出した場合、中間に舵を切る
+    elif "Blue-cone" in detection_dict and "Green-cone" in detection_dict:
+        blue_x = detections[detection_dict["Blue-cone"]
+                            ].spatialCoordinates.x
+        green_x = detections[detection_dict["Green-cone"]
+                             ].spatialCoordinates.x
+        target_x = (blue_x+green_x)
+        steer_pwm_duty = calc_normalization(target_x)
+        message = "青コーンと緑コーンを検出した場合、中間に舵を切る"
 
-        # 芝生を検出したら加速、右サイドを走行する
-        elif "Shibafu" in detection_dict:
-            if detections[detection_dict["Shibafu"]].spatialCoordinates.z < DETECTION_SHIBAFU_DIST:
-                throttle_pwm_duty = DASH
-                message = "芝生を検出したら加速する"
-            shibafu_x = detections[detection_dict["Shibafu"]
-                                   ].spatialCoordinates.x + SHIBAFU_OFFSET_X
-            steer_pwm_duty = (shibafu_x) / \
-                (DETECTION_NORM_MAX-DETECTION_NORM_MIN)*(-100)
+    # 緑コーンのみ検出かつXが-側の場合、操舵を左に切る
+    elif "Green-cone" in detection_dict and detections[detection_dict["Green-cone"]].spatialCoordinates.x < CORN_OFFSET_X:
+        green_x = detections[detection_dict["Green-cone"]
+                             ].spatialCoordinates.x
+        green_x -= CORN_OFFSET_X
+        steer_pwm_duty = calc_normalization(green_x)
+        message = "緑コーンのみ検出かつXが-側の場合、操舵を左に切る"
 
-        # パーキングモード時、P1-Greenに向かう
-        elif parking_mode == True and "P1-Green" in detection_dict:
-            # x軸補正
-            detect_pos_x = detections[detection_dict["P1-Green"]
-                                      ].spatialCoordinates.x
-            steer_pwm_duty = (detect_pos_x) / \
-                (DETECTION_NORM_MAX-DETECTION_NORM_MIN)*(-100)
-            # 減速処理
-            if detections[detection_dict["P1-Green"]].spatialCoordinates.z < 1000:
-                throttle_pwm_duty = 40
-            elif detections[detection_dict["P1-Green"]].spatialCoordinates.z < 300:
-                throttle_pwm_duty = 0
+    # 緑コーンのみ検出かつXが+側の場合、操舵を右に切る
+    elif "Green-cone" in detection_dict and detections[detection_dict["Green-cone"]].spatialCoordinates.x > (CORN_OFFSET_X*-1):
+        green_x = detections[detection_dict["Green-cone"]
+                             ].spatialCoordinates.x
+        green_x -= CORN_OFFSET_X
+        steer_pwm_duty = calc_normalization(green_x)
+        message = "緑コーンのみ検出かつXが-側の場合、操舵を左に切る"
 
-        # 係数補正
-        steer_pwm_duty = steer_pwm_duty * DETECTION_STEER_COEFFICIENT
+    # 緑コーンと橙コーンを検出した場合、中間に舵を切る
+    elif "Green-cone" in detection_dict and "Orange-cone" in detection_dict:
+        green_x = detections[detection_dict["Green-cone"]
+                             ].spatialCoordinates.x
+        orange_x = detections[detection_dict["Orange-cone"]
+                              ].spatialCoordinates.x
+        target_x = (green_x+orange_x)
+        steer_pwm_duty = calc_normalization(target_x)
+        message = "緑コーンと橙コーンを検出した場合、中間に舵を切る"
 
-        if message:
-            print("*******************************************************************")
-            print()
-            print("検出物：", detection_dict)
-            print(message)
+    # 橙コーンのみ検出かつXが+側の場合、操舵を右に切る
+    elif "Orange-cone" in detection_dict and detections[detection_dict["Orange-cone"]].spatialCoordinates.x > (CORN_OFFSET_X*-1):
+        orange_x = detections[detection_dict["Orange-cone"]
+                              ].spatialCoordinates.x
+        orange_x += CORN_OFFSET_X
+        steer_pwm_duty = calc_normalization(orange_x)
+        message = "橙コーンのみ検出かつXが+側の場合、操舵を右に切る"
 
-        # print(" ", time.time())
-        # for detection in detections:
-        #     print("x: ", detection.spatialCoordinates.x)
-        #     print("y: ", detection.spatialCoordinates.y)
-        #     print("z: ", detection.spatialCoordinates.z)
+    # ピンクラインを検出したら減速する
+    elif "Pink-line" in detection_dict:
+        if detections[detection_dict["Pink-line"]].spatialCoordinates.z < DETECTION_PINKLINE_DIST:
+            throttle_pwm_duty = SLOW
+            message = "ピンクラインを検出したら減速する"
+        elif detections[detection_dict["Pink-line"]].spatialCoordinates.z >= DETECTION_PINKLINE_DIST:
+            throttle_pwm_duty = DASH
+        steer_pwm_duty = calc_normalization(
+            detections[detection_dict["Pink-line"]].spatialCoordinates.x + PINKLINE_OFFSET_X)
 
-        # 現在の認識結果による値を格納
-        detection_steer_pwm_duty, detection_throttle_pwm_duty = steer_pwm_duty, throttle_pwm_duty
+    # 芝生を検出したら加速、右サイドを走行する
+    elif "Shibafu" in detection_dict:
+        if detections[detection_dict["Shibafu"]].spatialCoordinates.z < DETECTION_SHIBAFU_DIST:
+            throttle_pwm_duty = DASH
+            message = "芝生を検出したら加速する"
+        shibafu_x = detections[detection_dict["Shibafu"]
+                               ].spatialCoordinates.x + SHIBAFU_OFFSET_X
+        steer_pwm_duty = (shibafu_x) / \
+            (DETECTION_NORM_MAX-DETECTION_NORM_MIN)*(-100)
+
+    # パーキングモード時、P1-Greenに向かう
+    elif parking_mode == True and "P1-Green" in detection_dict:
+        # x軸補正
+        parking_x = detections[detection_dict["P1-Green"]].spatialCoordinates.x
+        steer_pwm_duty = calc_normalization(parking_x)
+        # 減速処理
+        if detections[detection_dict["P1-Green"]].spatialCoordinates.z < 1000:
+            throttle_pwm_duty = 40
+        elif detections[detection_dict["P1-Green"]].spatialCoordinates.z < 300:
+            throttle_pwm_duty = 0
+
+    # 係数補正
+    steer_pwm_duty = steer_pwm_duty * DETECTION_STEER_COEFFICIENT
+
+    if message:
+        print("*******************************************************************")
+        print()
+        print("検出物：", detection_dict)
+        print(message)
+
+    # print(" ", time.time())
+    # for detection in detections:
+    #     print("x: ", detection.spatialCoordinates.x)
+    #     print("y: ", detection.spatialCoordinates.y)
+    #     print("z: ", detection.spatialCoordinates.z)
 
     # 上限値超えを補正
     if steer_pwm_duty > 100:
         steer_pwm_duty = 100
     elif steer_pwm_duty < -100:
         steer_pwm_duty = -100
+
+    # 現在の認識結果による値を格納
+    detection_steer_pwm_duty, detection_throttle_pwm_duty = steer_pwm_duty, throttle_pwm_duty
+
+    return steer_pwm_duty, throttle_pwm_duty
+
+
+def planning_detection(steer_pwm_duty, throttle_pwm_duty):
+    """認識結果をもとに走行判断"""
+    global parking_mode
+    global detection_time
+    objects = []
+    detection_dict = {}
+
+    if (len(detections)) >= 1:
+        cnt_id = 0
+        for detection in detections:
+            # リミット以上の検出物を除外しそれ以外をリスト格納する
+            if detection.spatialCoordinates.z < DETECTION_DISTANCE_LIMIT:
+                object = Object
+                object.name = labels[detection.label]
+                object.start_time = time.time()
+                object.pos[0] = detection.spatialCoordinates.x
+                object.pos[1] = detection.spatialCoordinates.y
+                object.pos[2] = detection.spatialCoordinates.z
+                objects.append(object)
+                detection_dict[object.name] = cnt_id
+            cnt_id += 1
+        detection_time = current_time
+
+        steer_pwm_duty, throttle_pwm_duty = judge_control(
+            steer_pwm_duty, throttle_pwm_duty, detections, detection_dict)
 
     return steer_pwm_duty, throttle_pwm_duty
 
